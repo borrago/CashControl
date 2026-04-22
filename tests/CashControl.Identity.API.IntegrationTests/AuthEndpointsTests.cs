@@ -12,7 +12,7 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
-    public async Task Register_ShouldReturnTokens()
+    public async Task Register_ShouldRequireEmailConfirmationBeforeLogin()
     {
         var client = _factory.CreateClient();
         const string email = "john@cashcontrol.com";
@@ -25,23 +25,22 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
             fullName = "John Doe"
         }));
 
-        Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, registerResponse.StatusCode);
 
-        var register = await registerResponse.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
-        Assert.NotNull(register);
-        Assert.False(string.IsNullOrWhiteSpace(register.AccessToken));
-        Assert.False(string.IsNullOrWhiteSpace(register.RefreshToken));
+        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
+        Assert.Equal(HttpStatusCode.BadRequest, loginResponse.StatusCode);
     }
 
     [Fact]
-    public async Task Login_ShouldReturnTokensForExistingUser()
+    public async Task Login_ShouldReturnTokensForConfirmedUser()
     {
-        var client = _factory.CreateClient();
         const string email = "login@cashcontrol.com";
         const string password = "Pass123";
 
-        await client.PostAsync("/v1/auth/register", JsonContent.Create(new { email, password, fullName = "Login User" }));
+        await _factory.RegisterAsync(email, password, "Login User");
+        await _factory.ConfirmEmailAsync(email);
 
+        var client = _factory.CreateClient();
         var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
 
@@ -58,7 +57,8 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
         const string email = "refresh@cashcontrol.com";
         const string password = "Pass123";
 
-        await client.PostAsync("/v1/auth/register", JsonContent.Create(new { email, password, fullName = "Refresh User" }));
+        await _factory.RegisterAsync(email, password, "Refresh User");
+        await _factory.ConfirmEmailAsync(email);
 
         var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
         var login = await loginResponse.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
@@ -79,34 +79,33 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
-    public async Task ForgotPassword_ShouldReturnResetToken()
+    public async Task ForgotPassword_ShouldNotExposeResetToken()
     {
         var client = _factory.CreateClient();
         const string email = "reset@cashcontrol.com";
         const string password = "Pass123";
 
-        await client.PostAsync("/v1/auth/register", JsonContent.Create(new { email, password, fullName = "Reset User" }));
+        await _factory.RegisterAsync(email, password, "Reset User");
+        await _factory.ConfirmEmailAsync(email);
 
         var forgotResponse = await client.PostAsync("/v1/auth/forgot-password", JsonContent.Create(new { email }));
-        Assert.Equal(HttpStatusCode.OK, forgotResponse.StatusCode);
-
-        var forgotPayload = await forgotResponse.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
-        Assert.NotNull(forgotPayload);
-        Assert.False(string.IsNullOrWhiteSpace(forgotPayload.Token));
+        Assert.Equal(HttpStatusCode.NoContent, forgotResponse.StatusCode);
+        Assert.Empty(await forgotResponse.Content.ReadAsByteArrayAsync());
     }
 
     [Fact]
     public async Task ResetPassword_ShouldAllowLoginWithNewPassword()
     {
-        var client = _factory.CreateClient();
         const string email = "reset-password@cashcontrol.com";
         const string password = "Pass123";
         const string newPassword = "Pass456";
 
-        await client.PostAsync("/v1/auth/register", JsonContent.Create(new { email, password, fullName = "Reset Password User" }));
+        await _factory.RegisterAsync(email, password, "Reset Password User");
+        await _factory.ConfirmEmailAsync(email);
 
         var token = await _factory.GetPasswordResetTokenAsync(email);
 
+        var client = _factory.CreateClient();
         var resetResponse = await client.PostAsync("/v1/auth/reset-password", JsonContent.Create(new
         {
             email,
@@ -140,10 +139,5 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
 
         Assert.Equal(HttpStatusCode.NoContent, confirmResponse.StatusCode);
         Assert.True(await _factory.IsEmailConfirmedAsync(email));
-    }
-
-    private sealed class ForgotPasswordResponse
-    {
-        public string Token { get; set; } = string.Empty;
     }
 }

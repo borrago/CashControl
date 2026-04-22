@@ -25,7 +25,7 @@ public class IdentityService(
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
 
-    public async Task<AuthResponseDto> RegisterAsync(string email, string password, string? fullName, CancellationToken cancellationToken = default)
+    public async Task RegisterAsync(string email, string password, string? fullName, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.Trim();
         var existingUser = await _userManager.FindByEmailAsync(normalizedEmail);
@@ -43,8 +43,6 @@ public class IdentityService(
         var result = await _userManager.CreateAsync(user, password);
         if (!result.Succeeded)
             throw CreateApplicationException(result);
-
-        return await IssueTokensAsync(user);
     }
 
     public async Task<AuthResponseDto> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
@@ -52,6 +50,9 @@ public class IdentityService(
         var normalizedEmail = email.Trim();
         var user = await _userManager.FindByEmailAsync(normalizedEmail)
             ?? throw new CoreApplicationException("Usuario nao encontrado.");
+
+        if (!user.EmailConfirmed)
+            throw new CoreApplicationException("E-mail nao confirmado.");
 
         var signInResult = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
         if (!signInResult.Succeeded)
@@ -71,6 +72,9 @@ public class IdentityService(
 
         var user = await _userManager.FindByIdAsync(userId)
             ?? throw new CoreApplicationException("Usuario nao encontrado.");
+
+        if (!user.EmailConfirmed)
+            throw new CoreApplicationException("E-mail nao confirmado.");
 
         if (user.RefreshToken != refreshToken || user.RefreshTokenExpiryTimeUtc is null || user.RefreshTokenExpiryTimeUtc <= DateTime.UtcNow)
             throw new CoreApplicationException("Refresh token invalido ou expirado.");
@@ -95,12 +99,14 @@ public class IdentityService(
             throw CreateApplicationException(result);
     }
 
-    public async Task<string> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
+    public async Task ForgotPasswordAsync(string email, CancellationToken cancellationToken = default)
     {
-        var user = await _userManager.FindByEmailAsync(email.Trim())
-            ?? throw new CoreApplicationException("Usuario nao encontrado.");
+        var user = await _userManager.FindByEmailAsync(email.Trim());
+        if (user is null || !user.EmailConfirmed)
+            return;
 
-        return await _userManager.GeneratePasswordResetTokenAsync(user);
+        // The token must be delivered through an external channel and never exposed by the API response.
+        _ = await _userManager.GeneratePasswordResetTokenAsync(user);
     }
 
     public async Task ResetPasswordAsync(string email, string token, string newPassword, CancellationToken cancellationToken = default)

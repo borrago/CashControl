@@ -10,8 +10,8 @@ public class RegisterCommandHandler(IIdentityService identityService) : ICommand
 
     public async Task<RegisterCommandResult> Handle(RegisterCommandInput request, CancellationToken cancellationToken)
     {
-        var create = await _identityService.RegisterAsync(request.Email, request.Password, request.FullName, cancellationToken);
+        await _identityService.RegisterAsync(request.Email, request.Password, request.FullName, cancellationToken);
 
-        return (RegisterCommandResult)new RegisterCommandResult(create.AccessToken, create.RefreshToken, create.RefreshTokenExpiresAtUtc).WithHttpStatusCode(HttpStatusCode.OK);
+        return (RegisterCommandResult)new RegisterCommandResult().WithHttpStatusCode(HttpStatusCode.NoContent);
     }
 }

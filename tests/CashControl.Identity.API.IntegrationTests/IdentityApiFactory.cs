@@ -43,13 +43,29 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         Dispose();
     }
 
-    public async Task<(string UserId, string AccessToken, string RefreshToken)> RegisterAndLoginAsync(string email, string password, string? fullName = null)
+    public async Task RegisterAsync(string email, string password, string? fullName = null)
     {
         var client = CreateClient();
-        var registerPayload = JsonContent.Create(new { email, password, fullName });
-        var registerResponse = await client.PostAsync("/v1/auth/register", registerPayload);
+        var registerResponse = await client.PostAsync("/v1/auth/register", JsonContent.Create(new { email, password, fullName }));
         registerResponse.EnsureSuccessStatusCode();
+    }
 
+    public async Task ConfirmEmailAsync(string email)
+    {
+        var client = CreateClient();
+        var userId = await GetUserIdByEmailAsync(email);
+        var token = await GetEmailConfirmationTokenAsync(email);
+
+        var confirmResponse = await client.PostAsync("/v1/auth/confirm-email", JsonContent.Create(new { userId, token }));
+        confirmResponse.EnsureSuccessStatusCode();
+    }
+
+    public async Task<(string UserId, string AccessToken, string RefreshToken)> RegisterAndLoginAsync(string email, string password, string? fullName = null)
+    {
+        await RegisterAsync(email, password, fullName);
+        await ConfirmEmailAsync(email);
+
+        var client = CreateClient();
         var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
         loginResponse.EnsureSuccessStatusCode();
 

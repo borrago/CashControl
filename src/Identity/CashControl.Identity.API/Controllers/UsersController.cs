@@ -20,7 +20,7 @@ public class UsersController(IMediator mediator) : BaseController
     private readonly IMediator _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
     [HttpGet("me")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> GetCurrentUser(CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetCurrentUserQueryInput(GetRequiredUserId()), cancellationToken);

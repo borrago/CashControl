@@ -1,0 +1,9 @@
+.vs/
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+**/fine-code-coverage/
+*.user
+*.suo
+*.cache

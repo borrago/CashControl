@@ -84,6 +84,28 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
+    public async Task MeEndpoint_ShouldRequireAuthentication()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/v1/users/me");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminEndpoint_ShouldRequireAdminRole()
+    {
+        var (_, accessToken, _) = await _factory.RegisterAndLoginAsync("member-no-admin@cashcontrol.com", "Pass123", "Member");
+        var client = _factory.CreateAuthenticatedClient(accessToken);
+        var targetUserId = await _factory.GetUserIdByEmailAsync("member-no-admin@cashcontrol.com");
+
+        var response = await client.GetAsync($"/v1/admin/users/{targetUserId}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task AdminGetById_ShouldReturnRequestedUser()
     {
         var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync());

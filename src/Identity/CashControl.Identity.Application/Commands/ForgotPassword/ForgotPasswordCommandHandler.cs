@@ -10,8 +10,8 @@ public class ForgotPasswordCommandHandler(IIdentityService identityService) : IC
 
     public async Task<ForgotPasswordCommandResult> Handle(ForgotPasswordCommandInput request, CancellationToken cancellationToken)
     {
-        var token = await _identityService.ForgotPasswordAsync(request.Email, cancellationToken);
+        await _identityService.ForgotPasswordAsync(request.Email, cancellationToken);
 
-        return (ForgotPasswordCommandResult)new ForgotPasswordCommandResult(token).WithHttpStatusCode(HttpStatusCode.OK);
+        return (ForgotPasswordCommandResult)new ForgotPasswordCommandResult().WithHttpStatusCode(HttpStatusCode.NoContent);
     }
 }

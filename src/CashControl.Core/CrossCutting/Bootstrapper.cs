@@ -139,7 +139,10 @@ public static class Bootstrapper
                     }
                 });
             });
+        }
 
+        if (settings.RegisterAuthenticationAndAuthorization)
+        {
             services.Configure<JwtOptions>(settings.Configuration!.GetSection("Jwt"));
             var jwt = settings.Configuration!.GetSection("Jwt").Get<JwtOptions>()!;
             var key = Encoding.UTF8.GetBytes(jwt.Key);
@@ -163,10 +166,7 @@ public static class Bootstrapper
                     ClockSkew = TimeSpan.Zero
                 };
             });
-        }
 
-        if (settings.RegisterAuthenticationAndAuthorization)
-        {
             services.AddAuthorization(options =>
             {
                 var defaultAuthorizationPolicyBuilder = new AuthorizationPolicyBuilder("Bearer");

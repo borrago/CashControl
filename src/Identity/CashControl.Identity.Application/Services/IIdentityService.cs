@@ -4,7 +4,7 @@ namespace CashControl.Identity.Application.Services;
 
 public interface IIdentityService
 {
-    Task<AuthResponseDto> RegisterAsync(string email, string password, string? fullName, CancellationToken cancellationToken = default);
+    Task RegisterAsync(string email, string password, string? fullName, CancellationToken cancellationToken = default);
 
     Task<AuthResponseDto> LoginAsync(string email, string password, CancellationToken cancellationToken = default);
 
@@ -14,7 +14,7 @@ public interface IIdentityService
 
     Task ConfirmEmailAsync(string userId, string token, CancellationToken cancellationToken = default);
 
-    Task<string> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
+    Task ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
 
     Task ResetPasswordAsync(string email, string token, string newPassword, CancellationToken cancellationToken = default);
 
