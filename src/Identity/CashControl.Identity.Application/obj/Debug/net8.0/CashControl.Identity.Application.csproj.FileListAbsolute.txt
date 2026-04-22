@@ -1,0 +1,15 @@
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\bin\Debug\net8.0\CashControl.Identity.Application.deps.json
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\bin\Debug\net8.0\CashControl.Identity.Application.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\bin\Debug\net8.0\CashControl.Identity.Application.pdb
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\bin\Debug\net8.0\CashControl.Core.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\bin\Debug\net8.0\CashControl.Core.pdb
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.csproj.AssemblyReference.cache
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.AssemblyInfoInputs.cache
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.AssemblyInfo.cs
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.csproj.CoreCompileInputs.cache
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashCont.5EC95B8B.Up2Date
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\refint\CashControl.Identity.Application.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\CashControl.Identity.Application.pdb
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Application\obj\Debug\net8.0\ref\CashControl.Identity.Application.dll

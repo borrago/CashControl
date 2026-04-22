@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\CashControl.Core\CashControl.Core.csproj" />
+    <ProjectReference Include="..\CashControl.Identity.Application\CashControl.Identity.Application.csproj" />
+    <ProjectReference Include="..\CashControl.Identity.Domain\CashControl.Identity.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

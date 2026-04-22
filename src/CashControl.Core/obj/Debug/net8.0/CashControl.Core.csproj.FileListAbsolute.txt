@@ -1,0 +1,12 @@
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.csproj.AssemblyReference.cache
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.AssemblyInfoInputs.cache
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.AssemblyInfo.cs
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.csproj.CoreCompileInputs.cache
+C:\Projetos\CashControl\src\CashControl.Core\bin\Debug\net8.0\CashControl.Core.deps.json
+C:\Projetos\CashControl\src\CashControl.Core\bin\Debug\net8.0\CashControl.Core.dll
+C:\Projetos\CashControl\src\CashControl.Core\bin\Debug\net8.0\CashControl.Core.pdb
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.dll
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\refint\CashControl.Core.dll
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\CashControl.Core.pdb
+C:\Projetos\CashControl\src\CashControl.Core\obj\Debug\net8.0\ref\CashControl.Core.dll

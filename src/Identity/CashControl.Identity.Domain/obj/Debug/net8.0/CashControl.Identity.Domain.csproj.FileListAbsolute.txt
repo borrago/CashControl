@@ -1,0 +1,15 @@
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\bin\Debug\net8.0\CashControl.Identity.Domain.deps.json
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\bin\Debug\net8.0\CashControl.Identity.Domain.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\bin\Debug\net8.0\CashControl.Identity.Domain.pdb
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\bin\Debug\net8.0\CashControl.Core.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\bin\Debug\net8.0\CashControl.Core.pdb
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.csproj.AssemblyReference.cache
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.AssemblyInfoInputs.cache
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.AssemblyInfo.cs
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.csproj.CoreCompileInputs.cache
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashCont.4A22626C.Up2Date
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\refint\CashControl.Identity.Domain.dll
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\CashControl.Identity.Domain.pdb
+C:\Projetos\CashControl\src\Identity\CashControl.Identity.Domain\obj\Debug\net8.0\ref\CashControl.Identity.Domain.dll

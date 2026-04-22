@@ -1,0 +1,7 @@
+{
+  "CashControl.Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Projetos\\CashControl\\src\\CashControl.Core",
+  "CashControl.Identity.API, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Projetos\\CashControl\\src\\Identity\\CashControl.Identity.API",
+  "CashControl.Identity.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Projetos\\CashControl\\src\\Identity\\CashControl.Identity.Application",
+  "CashControl.Identity.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Projetos\\CashControl\\src\\Identity\\CashControl.Identity.Domain",
+  "CashControl.Identity.Infra, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Projetos\\CashControl\\src\\Identity\\CashControl.Identity.Infra"
+}
