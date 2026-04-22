@@ -14,7 +14,7 @@ public static class BaseControllerHelper
             return new StatusCodeResult((int)HttpStatusCode.InternalServerError);
 
         if (!mediatorResult.IsValid())
-            return new BadRequestObjectResult(mediatorResult.Errors);
+            return new BadRequestObjectResult(ApiErrorResponse.Validation(mediatorResult.Errors));
 
         if (mediatorResult.HttpStatusCode == HttpStatusCode.NoContent)
             return new NoContentResult();

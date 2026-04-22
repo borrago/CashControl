@@ -1,35 +1,20 @@
-using CashControl.Core.CrossCutting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
 using System.Net;
 using System.Security.Claims;
 
 namespace CashControl.Core.API;
 
 /// <summary>
-/// classe de validação de privilégios
+/// Classe de validacao de privilegios.
 /// </summary>
 public class ValidarPrivilegiosAttribute : ActionFilterAttribute
 {
-    public ValidarPrivilegiosAttribute()
-    {
-        JsonConvert.DefaultSettings = () => new JsonSerializerSettings
-        {
-            ContractResolver = new CamelCasePropertyNamesContractResolver()
-        };
-    }
-
     /// <summary>
-    /// Privilégios autorizados na rota
+    /// Privilegios autorizados na rota.
     /// </summary>
     public string PrivilegiosAutorizados { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Validates Level automaticaly
-    /// </summary>
-    /// <param name="context"></param>
     public override void OnActionExecuting(ActionExecutingContext context)
     {
         if (context.HttpContext.User.Identity is not ClaimsIdentity identity || !identity.IsAuthenticated)
@@ -42,25 +27,23 @@ public class ValidarPrivilegiosAttribute : ActionFilterAttribute
         if (IsSystemicUser(claimList))
             return;
 
-        var privilegiosToken = claimList.Where(claim => claim.Type == "privilegios").Select(s => s.Value.ToUpperInvariant());
-        var privilegiosAutorizados = PrivilegiosAutorizados.ToUpperInvariant().Split(',').Select(s => s.Trim());
+        var privilegiosToken = claimList
+            .Where(claim => claim.Type == "privilegios")
+            .Select(claim => claim.Value.ToUpperInvariant());
 
-        if (!privilegiosToken.Any(c => privilegiosAutorizados.Any(a => a.Equals(c))))
+        var privilegiosAutorizados = PrivilegiosAutorizados
+            .ToUpperInvariant()
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (!privilegiosToken.Any(privilegio => privilegiosAutorizados.Any(autorizado => autorizado == privilegio)))
         {
-            context.Result = new ContentResult
+            context.Result = new ObjectResult(ApiErrorResponse.Forbidden("O usuario nao possui privilegio para o endpoint solicitado."))
             {
-                StatusCode = (int)HttpStatusCode.Forbidden,
-                ContentType = "application/json",
-                Content = JsonConvert.SerializeObject(new CustomValidationFailure("Authorization", "O usuário não possui privilégio para o endpoint solicitado."))
+                StatusCode = (int)HttpStatusCode.Forbidden
             };
         }
     }
 
-    /// <summary>
-    /// Verifica se o usuário é sistemico
-    /// </summary>
-    /// <param name="claimList"></param>
-    /// <returns></returns>
     private static bool IsSystemicUser(List<Claim> claimList)
     {
         var claim = claimList.FirstOrDefault(c => c.Type == ClaimTypes.GroupSid || c.Type == "groupsid");

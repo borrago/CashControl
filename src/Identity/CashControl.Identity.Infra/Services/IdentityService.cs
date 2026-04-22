@@ -3,6 +3,7 @@ using CashControl.Core.CrossCutting;
 using CashControl.Identity.Application.Services;
 using CashControl.Identity.Application.Services.DTOs;
 using CashControl.Identity.Domain.Entities;
+using CashControl.Identity.Infra.Options;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -18,12 +19,16 @@ public class IdentityService(
     UserManager<User> userManager,
     SignInManager<User> signInManager,
     RoleManager<IdentityRole> roleManager,
-    IOptions<JwtOptions> jwtOptions) : IIdentityService
+    IOptions<JwtOptions> jwtOptions,
+    IOptions<EmailOptions> emailOptions,
+    IIdentityEmailSender identityEmailSender) : IIdentityService
 {
     private readonly UserManager<User> _userManager = userManager;
     private readonly SignInManager<User> _signInManager = signInManager;
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
+    private readonly EmailOptions _emailOptions = emailOptions.Value;
+    private readonly IIdentityEmailSender _identityEmailSender = identityEmailSender;
 
     public async Task RegisterAsync(string email, string password, string? fullName, CancellationToken cancellationToken = default)
     {
@@ -43,6 +48,8 @@ public class IdentityService(
         var result = await _userManager.CreateAsync(user, password);
         if (!result.Succeeded)
             throw CreateApplicationException(result);
+
+        await SendConfirmationEmailAsync(user, cancellationToken);
     }
 
     public async Task<AuthResponseDto> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
@@ -55,6 +62,9 @@ public class IdentityService(
             throw new CoreApplicationException("E-mail nao confirmado.");
 
         var signInResult = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
+        if (signInResult.IsLockedOut)
+            throw new CoreApplicationException("Usuario temporariamente bloqueado por excesso de tentativas. Tente novamente mais tarde.");
+
         if (!signInResult.Succeeded)
             throw new CoreApplicationException("Usuario ou senha invalidos.");
 
@@ -105,8 +115,7 @@ public class IdentityService(
         if (user is null || !user.EmailConfirmed)
             return;
 
-        // The token must be delivered through an external channel and never exposed by the API response.
-        _ = await _userManager.GeneratePasswordResetTokenAsync(user);
+        await SendPasswordResetEmailAsync(user, cancellationToken);
     }
 
     public async Task ResetPasswordAsync(string email, string token, string newPassword, CancellationToken cancellationToken = default)
@@ -287,4 +296,57 @@ public class IdentityService(
 
     private static CoreApplicationException CreateApplicationException(IdentityResult result)
         => new(result.Errors.Select(error => new CustomValidationFailure(error.Code, error.Description)));
+
+    private async Task SendConfirmationEmailAsync(User user, CancellationToken cancellationToken)
+    {
+        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        var confirmationUrl = BuildActionUrl(
+            _emailOptions.ConfirmationUrl,
+            new KeyValuePair<string, string>("userId", user.Id),
+            new KeyValuePair<string, string>("token", token));
+
+        var body = $"""
+            Ola {user.FullName ?? user.Email},
+
+            Confirme seu e-mail para ativar o acesso ao CashControl.
+            Link: {confirmationUrl}
+            """;
+
+        await _identityEmailSender.SendAsync(
+            new IdentityEmailMessage(user.Email ?? string.Empty, "Confirmacao de e-mail", body),
+            cancellationToken);
+    }
+
+    private async Task SendPasswordResetEmailAsync(User user, CancellationToken cancellationToken)
+    {
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var resetUrl = BuildActionUrl(
+            _emailOptions.ResetPasswordUrl,
+            new KeyValuePair<string, string>("email", user.Email ?? string.Empty),
+            new KeyValuePair<string, string>("token", token));
+
+        var body = $"""
+            Ola {user.FullName ?? user.Email},
+
+            Recebemos uma solicitacao para redefinir sua senha.
+            Link: {resetUrl}
+            """;
+
+        await _identityEmailSender.SendAsync(
+            new IdentityEmailMessage(user.Email ?? string.Empty, "Redefinicao de senha", body),
+            cancellationToken);
+    }
+
+    private static string BuildActionUrl(string? baseUrl, params KeyValuePair<string, string>[] values)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return string.Join(System.Environment.NewLine, values.Select(value => $"{value.Key}: {value.Value}"));
+
+        var queryString = string.Join(
+            "&",
+            values.Select(value => $"{Uri.EscapeDataString(value.Key)}={Uri.EscapeDataString(value.Value)}"));
+
+        var separator = baseUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{baseUrl}{separator}{queryString}";
+    }
 }

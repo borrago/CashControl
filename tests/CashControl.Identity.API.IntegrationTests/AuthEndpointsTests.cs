@@ -1,4 +1,5 @@
 using System.Net;
+using CashControl.Core.API;
 
 namespace CashControl.Identity.API.IntegrationTests;
 
@@ -29,6 +30,10 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
 
         var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
         Assert.Equal(HttpStatusCode.BadRequest, loginResponse.StatusCode);
+
+        var error = await loginResponse.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("validation_error", error.Code);
     }
 
     [Fact]
@@ -94,6 +99,26 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
+    public async Task Register_ShouldSendConfirmationEmail()
+    {
+        var client = _factory.CreateClient();
+        const string email = "confirm-email@cashcontrol.com";
+        const string password = "Pass123";
+
+        var registerResponse = await client.PostAsync("/v1/auth/register", JsonContent.Create(new
+        {
+            email,
+            password,
+            fullName = "Confirm Email User"
+        }));
+
+        Assert.Equal(HttpStatusCode.NoContent, registerResponse.StatusCode);
+
+        var token = await _factory.GetConfirmationTokenFromSentEmailAsync(email);
+        Assert.False(string.IsNullOrWhiteSpace(token));
+    }
+
+    [Fact]
     public async Task ResetPassword_ShouldAllowLoginWithNewPassword()
     {
         const string email = "reset-password@cashcontrol.com";
@@ -102,6 +127,10 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
 
         await _factory.RegisterAsync(email, password, "Reset Password User");
         await _factory.ConfirmEmailAsync(email);
+
+        var forgotClient = _factory.CreateClient();
+        var forgotResponse = await forgotClient.PostAsync("/v1/auth/forgot-password", JsonContent.Create(new { email }));
+        Assert.Equal(HttpStatusCode.NoContent, forgotResponse.StatusCode);
 
         var token = await _factory.GetPasswordResetTokenAsync(email);
 
@@ -139,5 +168,29 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
 
         Assert.Equal(HttpStatusCode.NoContent, confirmResponse.StatusCode);
         Assert.True(await _factory.IsEmailConfirmedAsync(email));
+    }
+
+    [Fact]
+    public async Task Login_ShouldLockUserAfterRepeatedInvalidAttempts()
+    {
+        var client = _factory.CreateClient();
+        const string email = "lockout@cashcontrol.com";
+        const string password = "Pass123";
+
+        await _factory.RegisterAsync(email, password, "Lockout User");
+        await _factory.ConfirmEmailAsync(email);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var invalidResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password = "Wrong123" }));
+            Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+        }
+
+        var lockedResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
+        Assert.Equal(HttpStatusCode.BadRequest, lockedResponse.StatusCode);
+
+        var error = await lockedResponse.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Contains(error.Errors, detail => detail.ErrorMessage.Contains("bloqueado", StringComparison.OrdinalIgnoreCase));
     }
 }

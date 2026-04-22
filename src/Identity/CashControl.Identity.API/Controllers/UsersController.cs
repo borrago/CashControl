@@ -1,4 +1,5 @@
-﻿using CashControl.Core.API;
+using CashControl.Core.API;
+using CashControl.Identity.API.Contracts.Api;
 using CashControl.Identity.API.Contracts.Users;
 using CashControl.Identity.Application.Commands.ChangePassword;
 using CashControl.Identity.Application.Commands.RevokeRefreshToken;
@@ -20,7 +21,7 @@ public class UsersController(IMediator mediator) : BaseController
     private readonly IMediator _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
     [HttpGet("me")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentUser(CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetCurrentUserQueryInput(GetRequiredUserId()), cancellationToken);
@@ -39,7 +40,7 @@ public class UsersController(IMediator mediator) : BaseController
     }
 
     [HttpPost("me/change-password")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(

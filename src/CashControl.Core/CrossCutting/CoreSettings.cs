@@ -71,6 +71,11 @@ public class CoreSettings
     public bool ConfigureExceptionMiddleware { get; set; } = true;
 
     /// <summary>
+    /// Configura o uso do middleware de rate limiter.
+    /// </summary>
+    public bool ConfigureRateLimiter { get; set; }
+
+    /// <summary>
     /// Registra a autenticação e autorização para o serviço.
     /// </summary>
     public bool RegisterAuthenticationAndAuthorization { get; set; } = true;

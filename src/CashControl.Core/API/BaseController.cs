@@ -8,9 +8,11 @@ using System.Security.Claims;
 namespace CashControl.Core.API;
 
 [Produces("application/json")]
-[ProducesResponseType(StatusCodes.Status401Unauthorized)]
-[ProducesResponseType(StatusCodes.Status403Forbidden)]
-[ProducesResponseType(StatusCodes.Status500InternalServerError)]
+[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+[ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
 public abstract class BaseController : Controller
 {
     protected Guid IdUsuario { get; private set; }

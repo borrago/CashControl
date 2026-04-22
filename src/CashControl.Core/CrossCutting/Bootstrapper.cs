@@ -11,13 +11,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.ResponseCompression;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using System.Configuration;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text;
@@ -28,7 +26,7 @@ public static class Bootstrapper
 {
     public static IServiceCollection RegisterCore(this IServiceCollection services, CoreSettings settings)
     {
-        services.AddSingleton<CoreSettings, CoreSettings>();
+        services.AddSingleton(settings);
 
         services.RegisterCrossCutting(settings);
 
@@ -165,6 +163,26 @@ public static class Bootstrapper
                     IssuerSigningKey = new SymmetricSecurityKey(key),
                     ClockSkew = TimeSpan.Zero
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        if (context.Response.HasStarted)
+                            return;
+
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(ApiErrorResponse.Unauthorized("Autenticacao obrigatoria."));
+                    },
+                    OnForbidden = async context =>
+                    {
+                        if (context.Response.HasStarted)
+                            return;
+
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(ApiErrorResponse.Forbidden("Voce nao tem permissao para acessar este recurso."));
+                    }
+                };
             });
 
             services.AddAuthorization(options =>
@@ -258,6 +276,9 @@ public static class Bootstrapper
 
         if (settings.UseDefaultRouting)
             app.UseRouting();
+
+        if (settings.ConfigureRateLimiter)
+            app.UseRateLimiter();
 
         if (settings.RegisterAuthenticationAndAuthorization)
         {

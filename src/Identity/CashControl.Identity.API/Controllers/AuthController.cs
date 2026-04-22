@@ -1,4 +1,5 @@
-﻿using CashControl.Core.API;
+using CashControl.Core.API;
+using CashControl.Identity.API.Contracts.Api;
 using CashControl.Identity.API.Contracts.Auth;
 using CashControl.Identity.Application.Commands.ConfirmEmail;
 using CashControl.Identity.Application.Commands.ForgotPassword;
@@ -8,6 +9,7 @@ using CashControl.Identity.Application.Commands.Register;
 using CashControl.Identity.Application.Commands.ResetPassword;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace CashControl.Identity.API.Controllers;
 
@@ -20,6 +22,8 @@ public class AuthController(IMediator mediator) : BaseController
 
     [HttpPost("register")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [EnableRateLimiting("AuthSensitive")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
@@ -30,7 +34,9 @@ public class AuthController(IMediator mediator) : BaseController
     }
 
     [HttpPost("login")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [EnableRateLimiting("AuthSensitive")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
@@ -41,7 +47,9 @@ public class AuthController(IMediator mediator) : BaseController
     }
 
     [HttpPost("refresh-token")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [EnableRateLimiting("AuthSensitive")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
@@ -52,7 +60,9 @@ public class AuthController(IMediator mediator) : BaseController
     }
 
     [HttpPost("forgot-password")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [EnableRateLimiting("AuthSensitive")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new ForgotPasswordCommandInput(request.Email), cancellationToken);
@@ -61,6 +71,8 @@ public class AuthController(IMediator mediator) : BaseController
 
     [HttpPost("reset-password")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [EnableRateLimiting("AuthSensitive")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(

@@ -1,4 +1,5 @@
-﻿using CashControl.Core.API;
+using CashControl.Core.API;
+using CashControl.Identity.API.Contracts.Api;
 using CashControl.Identity.Application.Commands.DeleteUser;
 using CashControl.Identity.Application.Commands.Roles.AssignRole;
 using CashControl.Identity.Application.Commands.Roles.RemoveRole;
@@ -19,7 +20,7 @@ public class AdminUsersController(IMediator mediator) : BaseController
     private readonly IMediator _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
     [HttpGet("{userId}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(string userId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetUserByIdQueryInput(userId), cancellationToken);
@@ -27,7 +28,7 @@ public class AdminUsersController(IMediator mediator) : BaseController
     }
 
     [HttpGet("{userId}/roles")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(UserRolesResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(string userId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetUserRolesQueryInput(userId), cancellationToken);

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using CashControl.Core.API;
 
 namespace CashControl.Identity.API.IntegrationTests;
 
@@ -91,6 +92,9 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         var response = await client.GetAsync("/v1/users/me");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("unauthorized", error.Code);
     }
 
     [Fact]
@@ -103,6 +107,9 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         var response = await client.GetAsync($"/v1/admin/users/{targetUserId}");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("forbidden", error.Code);
     }
 
     [Fact]

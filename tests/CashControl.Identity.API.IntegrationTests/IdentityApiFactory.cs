@@ -1,4 +1,5 @@
 using CashControl.Identity.Domain.Entities;
+using CashControl.Identity.Application.Services;
 using CashControl.Identity.Infra;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
@@ -22,8 +23,11 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         {
             services.RemoveAll<DbContextOptions<Context>>();
             services.RemoveAll<Context>();
+            services.RemoveAll<IIdentityEmailSender>();
 
             services.AddDbContext<Context>(options => options.UseSqlite(_connection));
+            services.AddSingleton<TestIdentityEmailSender>();
+            services.AddSingleton<IIdentityEmailSender>(sp => sp.GetRequiredService<TestIdentityEmailSender>());
 
             var serviceProvider = services.BuildServiceProvider();
             using var scope = serviceProvider.CreateScope();
@@ -54,7 +58,7 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         var client = CreateClient();
         var userId = await GetUserIdByEmailAsync(email);
-        var token = await GetEmailConfirmationTokenAsync(email);
+        var token = await GetConfirmationTokenFromSentEmailAsync(email);
 
         var confirmResponse = await client.PostAsync("/v1/auth/confirm-email", JsonContent.Create(new { userId, token }));
         confirmResponse.EnsureSuccessStatusCode();
@@ -127,24 +131,10 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     }
 
     public async Task<string> GetPasswordResetTokenAsync(string email)
-    {
-        using var scope = Services.CreateScope();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-        var user = await userManager.FindByEmailAsync(email);
-        ArgumentNullException.ThrowIfNull(user);
-
-        return await userManager.GeneratePasswordResetTokenAsync(user);
-    }
+        => await GetTokenFromSentEmailAsync(email, "Redefinicao de senha");
 
     public async Task<string> GetEmailConfirmationTokenAsync(string email)
-    {
-        using var scope = Services.CreateScope();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-        var user = await userManager.FindByEmailAsync(email);
-        ArgumentNullException.ThrowIfNull(user);
-
-        return await userManager.GenerateEmailConfirmationTokenAsync(user);
-    }
+        => await GetTokenFromSentEmailAsync(email, "Confirmacao de e-mail");
 
     public async Task<string> GetUserIdByEmailAsync(string email)
     {
@@ -189,5 +179,32 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         public string? AccessToken { get; set; }
         public string? RefreshToken { get; set; }
         public DateTime? RefreshTokenExpiresAtUtc { get; set; }
+    }
+
+    public async Task<string> GetConfirmationTokenFromSentEmailAsync(string email)
+        => await GetTokenFromSentEmailAsync(email, "Confirmacao de e-mail");
+
+    private Task<string> GetTokenFromSentEmailAsync(string email, string subject)
+    {
+        using var scope = Services.CreateScope();
+        var sender = scope.ServiceProvider.GetRequiredService<TestIdentityEmailSender>();
+        var message = sender.GetLastMessage(email, subject);
+        ArgumentNullException.ThrowIfNull(message);
+
+        var token = ExtractQueryParameter(message.Body, "token");
+        return Task.FromResult(token);
+    }
+
+    private static string ExtractQueryParameter(string content, string parameterName)
+    {
+        var marker = $"{parameterName}=";
+        var start = content.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0)
+            throw new InvalidOperationException($"Parametro '{parameterName}' nao encontrado no e-mail.");
+
+        start += marker.Length;
+        var end = content.IndexOfAny(['&', '\r', '\n'], start);
+        var encodedValue = end >= 0 ? content[start..end] : content[start..];
+        return Uri.UnescapeDataString(encodedValue.Trim());
     }
 }

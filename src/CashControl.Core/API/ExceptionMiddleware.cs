@@ -24,7 +24,7 @@ public class ExceptionMiddleware(RequestDelegate next)
                 Agent.Tracer.CurrentTransaction?.CaptureException(ex, JsonConvert.SerializeObject(ex.Errors));
 
             context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
-            await context.Response.WriteAsJsonAsync(ex.Errors);
+            await context.Response.WriteAsJsonAsync(ApiErrorResponse.Validation(ex.Errors));
         }
         catch (Exception ex)
         {
@@ -32,10 +32,7 @@ public class ExceptionMiddleware(RequestDelegate next)
                 Agent.Tracer.CurrentTransaction?.CaptureException(ex);
 
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-            await context.Response.WriteAsJsonAsync(new[]
-            {
-                new CustomValidationFailure("Ocorreu um erro interno.")
-            });
+            await context.Response.WriteAsJsonAsync(ApiErrorResponse.InternalServerError("Ocorreu um erro interno."));
         }
     }
 }
