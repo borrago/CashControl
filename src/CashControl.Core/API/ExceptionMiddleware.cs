@@ -1,6 +1,5 @@
-﻿using CashControl.Core.CrossCutting;
+using CashControl.Core.CrossCutting;
 using Elastic.Apm;
-using Elastic.Apm.Api;
 using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json;
 using System.Net;
@@ -15,42 +14,28 @@ public class ExceptionMiddleware(RequestDelegate next)
     {
         var useTelemetry = coreSettings.UseTelemetry;
 
-        ITransaction? transaction = null;
-
-        if (useTelemetry)
-            transaction = Agent.Tracer.StartTransaction(
-                context.Request?.Path.Value ??
-                context.GetEndpoint()?.DisplayName ??
-                "Core Default Transaction", ApiConstants.TypeRequest);
-
         try
         {
-            context.Response.Headers.Append("X-TELEMETRY", useTelemetry ? "ENABLED" : "DISABLED");
-
-            if (useTelemetry)
-                context.Response.Headers.Append("X-TELEMETRY-TRANSACTION-ID", Agent.Tracer.CurrentTransaction.Id);
-
             await _next(context);
         }
         catch (CustomException ex)
         {
-            if (useTelemetry && transaction != null)
-                transaction.CaptureException(ex, JsonConvert.SerializeObject(ex.Errors));
+            if (useTelemetry)
+                Agent.Tracer.CurrentTransaction?.CaptureException(ex, JsonConvert.SerializeObject(ex.Errors));
 
             context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
             await context.Response.WriteAsJsonAsync(ex.Errors);
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            if (useTelemetry && transaction != null)
-                transaction.CaptureException(e);
+            if (useTelemetry)
+                Agent.Tracer.CurrentTransaction?.CaptureException(ex);
 
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-        }
-        finally
-        {
-            if (useTelemetry && transaction != null)
-                transaction.End();
+            await context.Response.WriteAsJsonAsync(new[]
+            {
+                new CustomValidationFailure("Ocorreu um erro interno.")
+            });
         }
     }
 }

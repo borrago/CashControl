@@ -1,4 +1,6 @@
-﻿namespace CashControl.Core.CrossCutting;
+using CashControl.Core.Domain;
+
+namespace CashControl.Core.CrossCutting;
 
 public class TenantProvider : ITenantProvider
 {
@@ -16,19 +18,14 @@ public class TenantProvider : ITenantProvider
         if (tenantId == 0)
         {
             if (!environment.IsDevelopment())
-            {
-                throw new Exception($"Missing tenant configuration in environment: {environment.Name}");
-            }
+                throw new DomainException($"Missing tenant configuration in environment: {environment.Name}");
 
             tenantId = TenantDefaultKey;
         }
 
         var tenant = tenants.FirstOrDefault(x => x.Id == tenantId);
-
         if (tenant is null)
-        {
-            throw new Exception($"Tenant not found with Id: {tenantId}");
-        }
+            throw new DomainException($"Tenant not found with Id: {tenantId}");
 
         Tenant = tenant;
     }

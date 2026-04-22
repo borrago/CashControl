@@ -1,6 +1,5 @@
-﻿using CashControl.Core.Application;
+using CashControl.Core.Application;
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
 using System.Dynamic;
 using System.Net;
 using System.Reflection;
@@ -44,10 +43,9 @@ public static class BaseControllerHelper
             if (mediatorResult.HttpStatusCode == HttpStatusCode.Created)
                 return new CreatedResult(location, result);
 
-            return new ContentResult
+            return new ObjectResult(result)
             {
-                StatusCode = (int)mediatorResult.HttpStatusCode,
-                Content = JsonConvert.SerializeObject(result)
+                StatusCode = (int)mediatorResult.HttpStatusCode
             };
         }
 

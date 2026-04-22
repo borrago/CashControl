@@ -1,5 +1,3 @@
-﻿using Microsoft.AspNetCore.Http;
-
 namespace CashControl.Core.CrossCutting;
 
 public interface ILoggedUserProvider
@@ -9,7 +7,6 @@ public interface ILoggedUserProvider
     string Nome { get; }
 
     int Tenant { get; }
-    bool IsLogged();
 
-    void SetAuthorizationFromContext(HttpContext httpContext);
+    bool IsLogged();
 }

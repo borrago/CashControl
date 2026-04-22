@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 
 namespace CashControl.Core.CrossCutting;
@@ -13,7 +12,7 @@ public class LoggedUserProvider : ILoggedUserProvider
     public LoggedUserProvider(IHttpContextAccessor httpContextAccessor)
     {
         var httpContext = httpContextAccessor?.HttpContext ?? new DefaultHttpContext();
-        if (httpContext?.User.Identity is not ClaimsIdentity claim || !claim.IsAuthenticated)
+        if (httpContext.User.Identity is not ClaimsIdentity claim || !claim.IsAuthenticated)
             return;
 
         WithClaimsIdentity(claim);
@@ -24,19 +23,6 @@ public class LoggedUserProvider : ILoggedUserProvider
         WithClaimsIdentity(claims);
     }
 
-    public void SetAuthorizationFromContext(HttpContext httpContext)
-    {
-        if (httpContext != null)
-        {
-            var tokenFromAuthorization = GetTokenFromAuthorization(httpContext);
-            if (tokenFromAuthorization != null)
-            {
-                SetClaimsFromAuthorization(tokenFromAuthorization);
-                return;
-            }
-        }
-    }
-
     public bool IsLogged()
     {
         return IdUsuario != null && IdUsuario != Guid.Empty;
@@ -44,31 +30,12 @@ public class LoggedUserProvider : ILoggedUserProvider
 
     private void WithClaimsIdentity(ClaimsIdentity claim)
     {
-        if (claim == null) return;
+        if (Guid.TryParse(claim.FindFirst(ClaimTypes.Upn)?.Value, out var userPrincipalName))
+            IdUsuario = userPrincipalName;
 
-        var userPrincipalName = Guid.Parse(claim.FindFirst(ClaimTypes.Upn)?.Value ?? "");
-        IdUsuario = userPrincipalName;
+        Nome = claim.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
 
-        var name = claim.FindFirst(ClaimTypes.Name)?.Value ?? "";
-        Nome = name;
-
-        var tenant = int.Parse(claim.FindFirst("Tenant")?.Value ?? "");
-        Tenant = tenant;
-    }
-
-    private void SetClaimsFromAuthorization(string tokenId)
-    {
-        var handler = new JwtSecurityTokenHandler();
-        var tokenS = handler.ReadJwtToken(tokenId);
-
-        WithClaimsIdentity(new ClaimsIdentity(tokenS.Claims));
-    }
-
-    private static string GetTokenFromAuthorization(HttpContext context)
-    {
-        if (!string.IsNullOrEmpty(context.Request.Query["Authorization"].ToString()))
-            return context.Request.Query["Authorization"].ToString();
-
-        return context.Request.Headers["Authorization"].ToString();
+        if (int.TryParse(claim.FindFirst("Tenant")?.Value, out var tenant))
+            Tenant = tenant;
     }
 }
