@@ -7,3 +7,7 @@
 *.user
 *.suo
 *.cache
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
