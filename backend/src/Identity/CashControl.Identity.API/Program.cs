@@ -54,6 +54,8 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+await app.Services.SeedIdentityDataAsync();
+
 app.UseHttpsRedirection();
 app.UseCore(coreSettings);
 

@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
 using CashControl.Core.API;
+using CashControl.Core.CrossCutting;
+using CashControl.Identity.Infra;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace CashControl.Identity.API.IntegrationTests;
 
@@ -25,6 +28,8 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         var me = await meResponse.Content.ReadFromJsonAsync<UserProfileResponse>();
         Assert.NotNull(me);
         Assert.Equal("Profile User", me.FullName);
+        Assert.Equal(1, me.Tenant);
+        Assert.False(me.IsSuperUser);
 
         var updateResponse = await client.PutAsync("/v1/users/me", JsonContent.Create(new
         {
@@ -40,6 +45,8 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.NotNull(updated);
         Assert.Equal("Updated Name", updated.FullName);
         Assert.Equal("5511988887777", updated.PhoneNumber);
+        Assert.Equal(1, updated.Tenant);
+        Assert.False(updated.IsSuperUser);
     }
 
     [Fact]
@@ -125,6 +132,8 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.NotNull(user);
         Assert.Equal(userId, user.Id);
         Assert.Equal("Member", user.FullName);
+        Assert.Equal(1, user.Tenant);
+        Assert.False(user.IsSuperUser);
     }
 
     [Fact]
@@ -183,12 +192,66 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.False(await _factory.UserExistsAsync(userId));
     }
 
+    [Fact]
+    public async Task AdminShouldNotManageUserFromAnotherTenant()
+    {
+        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync("tenant-admin@cashcontrol.com", "Admin123"));
+        var externalUserId = await _factory.CreateUserAsync("tenant-two@cashcontrol.com", "Pass123", "Tenant Two", tenant: 2);
+
+        var response = await client.GetAsync($"/v1/admin/users/{externalUserId}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("validation_error", error.Code);
+        Assert.Contains(error.Errors, detail => detail.ErrorMessage.Contains("outro tenant", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SuperAdminShouldImpersonateUserFromAnotherTenant()
+    {
+        var client = _factory.CreateAuthenticatedClient(await _factory.CreateSuperAdminAccessTokenAsync());
+        var targetUserId = await _factory.CreateUserAsync("tenant-three@cashcontrol.com", "Pass123", "Tenant Three", tenant: 3, roles: ["Manager"]);
+
+        var response = await client.PostAsync($"/v1/admin/users/{targetUserId}/impersonate", content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var auth = await response.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
+        Assert.NotNull(auth);
+        Assert.False(string.IsNullOrWhiteSpace(auth.AccessToken));
+        Assert.Null(auth.RefreshToken);
+        Assert.Null(auth.RefreshTokenExpiresAtUtc);
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(auth.AccessToken);
+        Assert.Equal(targetUserId, jwt.Claims.First(claim => claim.Type == JwtRegisteredClaimNames.Sub).Value);
+        Assert.Equal("3", jwt.Claims.First(claim => claim.Type == CustomClaimTypes.Tenant).Value);
+        Assert.Equal("true", jwt.Claims.First(claim => claim.Type == CustomClaimTypes.IsImpersonating).Value);
+        Assert.Equal(IdentitySeedOptions.SuperAdminEmail, jwt.Claims.First(claim => claim.Type == CustomClaimTypes.ImpersonatedByEmail).Value);
+    }
+
+    [Fact]
+    public async Task AdminShouldNotImpersonateUsers()
+    {
+        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync("plain-admin@cashcontrol.com", "Admin123"));
+        var targetUserId = await _factory.CreateUserAsync("member-impersonation@cashcontrol.com", "Pass123", "Member");
+
+        var response = await client.PostAsync($"/v1/admin/users/{targetUserId}/impersonate", content: null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("forbidden", error.Code);
+    }
+
     private sealed class UserProfileResponse
     {
         public string Id { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? FullName { get; set; }
         public string? PhoneNumber { get; set; }
+        public int Tenant { get; set; }
+        public bool IsSuperUser { get; set; }
         public IList<string> Roles { get; set; } = [];
     }
 

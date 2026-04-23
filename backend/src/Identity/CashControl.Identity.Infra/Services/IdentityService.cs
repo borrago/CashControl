@@ -4,6 +4,7 @@ using CashControl.Identity.Application.Services;
 using CashControl.Identity.Application.Services.DTOs;
 using CashControl.Identity.Domain.Entities;
 using CashControl.Identity.Infra.Options;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -19,6 +20,7 @@ public class IdentityService(
     UserManager<User> userManager,
     SignInManager<User> signInManager,
     RoleManager<IdentityRole> roleManager,
+    IHttpContextAccessor httpContextAccessor,
     IOptions<JwtOptions> jwtOptions,
     IOptions<EmailOptions> emailOptions,
     IIdentityEmailSender identityEmailSender) : IIdentityService
@@ -26,6 +28,7 @@ public class IdentityService(
     private readonly UserManager<User> _userManager = userManager;
     private readonly SignInManager<User> _signInManager = signInManager;
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
+    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
     private readonly EmailOptions _emailOptions = emailOptions.Value;
     private readonly IIdentityEmailSender _identityEmailSender = identityEmailSender;
@@ -42,7 +45,9 @@ public class IdentityService(
             UserName = normalizedEmail,
             Email = normalizedEmail,
             FullName = fullName?.Trim(),
-            EmailConfirmed = false
+            EmailConfirmed = false,
+            Tenant = User.DefaultTenant,
+            IsSuperUser = false
         };
 
         var result = await _userManager.CreateAsync(user, password);
@@ -79,6 +84,9 @@ public class IdentityService(
 
         if (string.IsNullOrWhiteSpace(userId))
             throw new CoreApplicationException("Token invalido.");
+
+        if (bool.TryParse(principal.FindFirstValue(CustomClaimTypes.IsImpersonating), out var isImpersonating) && isImpersonating)
+            throw new CoreApplicationException("Sessao de impersonacao nao suporta refresh token.");
 
         var user = await _userManager.FindByIdAsync(userId)
             ?? throw new CoreApplicationException("Usuario nao encontrado.");
@@ -139,7 +147,7 @@ public class IdentityService(
 
     public async Task<UserDto?> GetByIdAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var user = await GetRequiredUserAsync(userId);
+        var user = await GetAccessibleUserAsync(userId);
         return await MapUserAsync(user);
     }
 
@@ -156,8 +164,12 @@ public class IdentityService(
 
     public async Task AssignRoleAsync(string userId, string role, CancellationToken cancellationToken = default)
     {
+        var actor = GetRequiredActor();
         var normalizedRole = role.Trim();
-        var user = await GetRequiredUserAsync(userId);
+        var user = await GetAccessibleUserAsync(userId);
+
+        if (!actor.IsSuperUser && normalizedRole.Equals(IdentitySeedOptions.SuperAdminRole, StringComparison.OrdinalIgnoreCase))
+            throw new CoreApplicationException("Somente o super usuario pode atribuir a role SuperAdmin.");
 
         if (!await _roleManager.RoleExistsAsync(normalizedRole))
         {
@@ -176,26 +188,49 @@ public class IdentityService(
 
     public async Task RemoveRoleAsync(string userId, string role, CancellationToken cancellationToken = default)
     {
-        var user = await GetRequiredUserAsync(userId);
-        var result = await _userManager.RemoveFromRoleAsync(user, role.Trim());
+        var actor = GetRequiredActor();
+        var normalizedRole = role.Trim();
+        var user = await GetAccessibleUserAsync(userId);
 
+        if (!actor.IsSuperUser && normalizedRole.Equals(IdentitySeedOptions.SuperAdminRole, StringComparison.OrdinalIgnoreCase))
+            throw new CoreApplicationException("Somente o super usuario pode remover a role SuperAdmin.");
+
+        var result = await _userManager.RemoveFromRoleAsync(user, normalizedRole);
         if (!result.Succeeded)
             throw CreateApplicationException(result);
     }
 
     public async Task<IList<string>> GetRolesAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var user = await GetRequiredUserAsync(userId);
+        var user = await GetAccessibleUserAsync(userId);
         return await _userManager.GetRolesAsync(user);
     }
 
     public async Task DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var user = await GetRequiredUserAsync(userId);
-        var result = await _userManager.DeleteAsync(user);
+        var actor = GetRequiredActor();
+        var user = await GetAccessibleUserAsync(userId);
 
+        if (user.IsSuperUser && !actor.IsSuperUser)
+            throw new CoreApplicationException("Somente o super usuario pode remover outro super usuario.");
+
+        var result = await _userManager.DeleteAsync(user);
         if (!result.Succeeded)
             throw CreateApplicationException(result);
+    }
+
+    public async Task<AuthResponseDto> ImpersonateAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var actor = GetRequiredActor();
+        if (!actor.IsSuperUser)
+            throw new CoreApplicationException("Somente o super usuario pode impersonar usuarios.");
+
+        var targetUser = await GetRequiredUserAsync(userId);
+        if (targetUser.IsSuperUser)
+            throw new CoreApplicationException("Nao e permitido impersonar outro super usuario.");
+
+        var accessToken = await GenerateAccessTokenAsync(targetUser, actor);
+        return new AuthResponseDto(accessToken, null, null);
     }
 
     private async Task<AuthResponseDto> IssueTokensAsync(User user)
@@ -213,6 +248,23 @@ public class IdentityService(
     private async Task<User> GetRequiredUserAsync(string userId)
         => await _userManager.FindByIdAsync(userId) ?? throw new CoreApplicationException("Usuario nao encontrado.");
 
+    private async Task<User> GetAccessibleUserAsync(string userId)
+    {
+        var actor = GetRequiredActor();
+        var user = await GetRequiredUserAsync(userId);
+
+        if (actor.IsSuperUser)
+            return user;
+
+        if (user.IsSuperUser)
+            throw new CoreApplicationException("O super usuario nao pode ser administrado por este tenant.");
+
+        if (actor.Tenant == 0 || actor.Tenant != user.Tenant)
+            throw new CoreApplicationException("Operacao nao permitida para usuarios de outro tenant.");
+
+        return user;
+    }
+
     private async Task<UserDto> MapUserAsync(User user)
     {
         var roles = await _userManager.GetRolesAsync(user);
@@ -224,6 +276,8 @@ public class IdentityService(
             UserName = user.UserName,
             FullName = user.FullName,
             PhoneNumber = user.PhoneNumber,
+            Tenant = user.Tenant,
+            IsSuperUser = user.IsSuperUser,
             Roles = roles
         };
     }
@@ -235,7 +289,7 @@ public class IdentityService(
             throw CreateApplicationException(result);
     }
 
-    private async Task<string> GenerateAccessTokenAsync(User user)
+    private async Task<string> GenerateAccessTokenAsync(User user, RequestActorContext? impersonatedBy = null)
     {
         var roles = await _userManager.GetRolesAsync(user);
 
@@ -244,11 +298,21 @@ public class IdentityService(
             new(JwtRegisteredClaimNames.Sub, user.Id),
             new(ClaimTypes.NameIdentifier, user.Id),
             new(ClaimTypes.Name, user.UserName ?? string.Empty),
+            new(ClaimTypes.Email, user.Email ?? string.Empty),
             new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(CustomClaimTypes.Tenant, user.Tenant.ToString()),
+            new(CustomClaimTypes.IsSuperUser, user.IsSuperUser.ToString().ToLowerInvariant())
         };
 
         claims.AddRange(roles.Select(roleValue => new Claim(ClaimTypes.Role, roleValue)));
+
+        if (impersonatedBy is not null)
+        {
+            claims.Add(new Claim(CustomClaimTypes.IsImpersonating, bool.TrueString.ToLowerInvariant()));
+            claims.Add(new Claim(CustomClaimTypes.ImpersonatedByUserId, impersonatedBy.UserId));
+            claims.Add(new Claim(CustomClaimTypes.ImpersonatedByEmail, impersonatedBy.Email ?? string.Empty));
+        }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Key));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -296,6 +360,24 @@ public class IdentityService(
 
     private static CoreApplicationException CreateApplicationException(IdentityResult result)
         => new(result.Errors.Select(error => new CustomValidationFailure(error.Code, error.Description)));
+
+    private RequestActorContext GetRequiredActor()
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true)
+            throw new CoreApplicationException("Usuario autenticado nao encontrado.");
+
+        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? throw new CoreApplicationException("Usuario autenticado sem identificador.");
+
+        var email = principal.FindFirstValue(JwtRegisteredClaimNames.Email)
+            ?? principal.FindFirstValue(ClaimTypes.Email);
+        var isSuperUser = bool.TryParse(principal.FindFirstValue(CustomClaimTypes.IsSuperUser), out var parsedIsSuperUser) && parsedIsSuperUser;
+        var tenant = int.TryParse(principal.FindFirstValue(CustomClaimTypes.Tenant), out var parsedTenant) ? parsedTenant : 0;
+
+        return new RequestActorContext(userId, email, tenant, isSuperUser);
+    }
 
     private async Task SendConfirmationEmailAsync(User user, CancellationToken cancellationToken)
     {
@@ -349,4 +431,6 @@ public class IdentityService(
         var separator = baseUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
         return $"{baseUrl}{separator}{queryString}";
     }
+
+    private sealed record RequestActorContext(string UserId, string? Email, int Tenant, bool IsSuperUser);
 }

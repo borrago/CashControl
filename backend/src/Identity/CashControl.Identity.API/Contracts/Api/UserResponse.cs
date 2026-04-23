@@ -7,5 +7,7 @@ public sealed class UserResponse
     public string? UserName { get; set; }
     public string? FullName { get; set; }
     public string? PhoneNumber { get; set; }
+    public int Tenant { get; set; }
+    public bool IsSuperUser { get; set; }
     public IList<string> Roles { get; set; } = [];
 }

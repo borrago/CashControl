@@ -13,7 +13,10 @@ public class Context(DbContextOptions<Context> options) : IdentityDbContext<User
         builder.Entity<User>(entity =>
         {
             entity.Property(x => x.FullName).HasMaxLength(200);
+            entity.Property(x => x.Tenant).IsRequired();
+            entity.Property(x => x.IsSuperUser).IsRequired();
             entity.Property(x => x.RefreshToken).HasMaxLength(500);
+            entity.HasIndex(x => x.Tenant);
         });
     }
 }

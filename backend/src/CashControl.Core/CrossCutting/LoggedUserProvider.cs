@@ -35,7 +35,7 @@ public class LoggedUserProvider : ILoggedUserProvider
 
         Nome = claim.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
 
-        if (int.TryParse(claim.FindFirst("Tenant")?.Value, out var tenant))
+        if (int.TryParse(claim.FindFirst(CustomClaimTypes.Tenant)?.Value, out var tenant))
             Tenant = tenant;
     }
 }

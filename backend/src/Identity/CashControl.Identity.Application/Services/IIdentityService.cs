@@ -33,4 +33,6 @@ public interface IIdentityService
     Task<IList<string>> GetRolesAsync(string userId, CancellationToken cancellationToken = default);
 
     Task DeleteUserAsync(string userId, CancellationToken cancellationToken = default);
+
+    Task<AuthResponseDto> ImpersonateAsync(string userId, CancellationToken cancellationToken = default);
 }

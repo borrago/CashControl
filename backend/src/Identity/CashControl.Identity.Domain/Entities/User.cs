@@ -3,9 +3,13 @@ using Microsoft.AspNetCore.Identity;
 
 namespace CashControl.Identity.Domain.Entities;
 
-public class User : IdentityUser, IAggregateRoot
+public class User : IdentityUser, IAggregateRoot, ITenantEntity
 {
+    public const int DefaultTenant = 1;
+
     public string? FullName { get; set; }
+    public int Tenant { get; set; } = DefaultTenant;
+    public bool IsSuperUser { get; set; }
 
     public string? RefreshToken { get; set; }
     public DateTime? RefreshTokenExpiryTimeUtc { get; set; }

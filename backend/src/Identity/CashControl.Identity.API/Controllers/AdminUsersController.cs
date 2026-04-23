@@ -1,6 +1,7 @@
 using CashControl.Core.API;
 using CashControl.Identity.API.Contracts.Api;
 using CashControl.Identity.Application.Commands.DeleteUser;
+using CashControl.Identity.Application.Commands.ImpersonateUser;
 using CashControl.Identity.Application.Commands.Roles.AssignRole;
 using CashControl.Identity.Application.Commands.Roles.RemoveRole;
 using CashControl.Identity.Application.Queries.GetUserById;
@@ -11,7 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CashControl.Identity.API.Controllers;
 
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,SuperAdmin")]
 [ApiController]
 [Route("v1/admin/users")]
 [Produces("application/json")]
@@ -32,6 +33,15 @@ public class AdminUsersController(IMediator mediator) : BaseController
     public async Task<IActionResult> GetRoles(string userId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetUserRolesQueryInput(userId), cancellationToken);
+        return HandleMediatorResult(result);
+    }
+
+    [Authorize(Roles = "SuperAdmin")]
+    [HttpPost("{userId}/impersonate")]
+    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Impersonate(string userId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ImpersonateUserCommandInput(userId), cancellationToken);
         return HandleMediatorResult(result);
     }
 

@@ -1,6 +1,7 @@
 using CashControl.Identity.Domain.Entities;
 using CashControl.Identity.Application.Services;
 using CashControl.Identity.Infra;
+using CashControl.Identity.Infra.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -93,41 +94,25 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public async Task<string> CreateAdminAccessTokenAsync(string email = "admin@cashcontrol.com", string password = "Admin123")
     {
-        var client = CreateClient();
+        await EnsureUserAsync(email, password, "Admin User", tenant: User.DefaultTenant, isSuperUser: false, roles: [IdentitySeedOptions.AdminRole]);
+        return await LoginAndGetAccessTokenAsync(email, password);
+    }
 
-        using var scope = Services.CreateScope();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    public Task<string> CreateSuperAdminAccessTokenAsync(
+        string email = IdentitySeedOptions.SuperAdminEmail,
+        string password = IdentitySeedOptions.SuperAdminPassword)
+        => LoginAndGetAccessTokenAsync(email, password);
 
-        if (!await roleManager.RoleExistsAsync("Admin"))
-            await roleManager.CreateAsync(new IdentityRole("Admin"));
-
-        var user = await userManager.FindByEmailAsync(email);
-        if (user is null)
-        {
-            user = new User
-            {
-                UserName = email,
-                Email = email,
-                EmailConfirmed = true,
-                FullName = "Admin User"
-            };
-
-            var create = await userManager.CreateAsync(user, password);
-            if (!create.Succeeded)
-                throw new InvalidOperationException(string.Join(", ", create.Errors.Select(x => x.Description)));
-        }
-
-        if (!await userManager.IsInRoleAsync(user, "Admin"))
-            await userManager.AddToRoleAsync(user, "Admin");
-
-        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
-        loginResponse.EnsureSuccessStatusCode();
-
-        var login = await loginResponse.Content.ReadFromJsonAsync<AuthTokenResponse>();
-        ArgumentNullException.ThrowIfNull(login);
-
-        return login.AccessToken!;
+    public async Task<string> CreateUserAsync(
+        string email,
+        string password,
+        string? fullName = null,
+        int tenant = User.DefaultTenant,
+        bool isSuperUser = false,
+        params string[] roles)
+    {
+        await EnsureUserAsync(email, password, fullName, tenant, isSuperUser, roles);
+        return await GetUserIdByEmailAsync(email);
     }
 
     public async Task<string> GetPasswordResetTokenAsync(string email)
@@ -183,6 +168,81 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public async Task<string> GetConfirmationTokenFromSentEmailAsync(string email)
         => await GetTokenFromSentEmailAsync(email, "Confirmacao de e-mail");
+
+    private async Task<string> LoginAndGetAccessTokenAsync(string email, string password)
+    {
+        var client = CreateClient();
+        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
+        loginResponse.EnsureSuccessStatusCode();
+
+        var login = await loginResponse.Content.ReadFromJsonAsync<AuthTokenResponse>();
+        ArgumentNullException.ThrowIfNull(login);
+
+        return login.AccessToken!;
+    }
+
+    private async Task EnsureUserAsync(
+        string email,
+        string password,
+        string? fullName,
+        int tenant,
+        bool isSuperUser,
+        params string[] roles)
+    {
+        using var scope = Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+
+        foreach (var role in roles.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!await roleManager.RoleExistsAsync(role))
+                await roleManager.CreateAsync(new IdentityRole(role));
+        }
+
+        var user = await userManager.FindByEmailAsync(email);
+        if (user is null)
+        {
+            user = new User
+            {
+                UserName = email,
+                Email = email,
+                EmailConfirmed = true,
+                FullName = fullName,
+                Tenant = tenant,
+                IsSuperUser = isSuperUser
+            };
+
+            var create = await userManager.CreateAsync(user, password);
+            if (!create.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", create.Errors.Select(x => x.Description)));
+        }
+        else
+        {
+            user.UserName = email;
+            user.Email = email;
+            user.EmailConfirmed = true;
+            user.FullName = fullName;
+            user.Tenant = tenant;
+            user.IsSuperUser = isSuperUser;
+
+            var update = await userManager.UpdateAsync(user);
+            if (!update.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", update.Errors.Select(x => x.Description)));
+        }
+
+        var currentRoles = await userManager.GetRolesAsync(user);
+        var missingRoles = roles
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(role => !currentRoles.Contains(role, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (missingRoles.Length > 0)
+        {
+            var addRoles = await userManager.AddToRolesAsync(user, missingRoles);
+            if (!addRoles.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", addRoles.Errors.Select(x => x.Description)));
+        }
+    }
 
     private Task<string> GetTokenFromSentEmailAsync(string email, string subject)
     {
