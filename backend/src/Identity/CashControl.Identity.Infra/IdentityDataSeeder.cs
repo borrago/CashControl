@@ -13,7 +13,6 @@ public static class IdentityDataSeeder
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
 
         await EnsureRoleAsync(roleManager, IdentitySeedOptions.AdminRole);
-        await EnsureRoleAsync(roleManager, IdentitySeedOptions.SuperAdminRole);
 
         var superUser = await userManager.FindByEmailAsync(IdentitySeedOptions.SuperAdminEmail);
         if (superUser is null)
@@ -45,7 +44,7 @@ public static class IdentityDataSeeder
         }
 
         await EnsureUserRoleAsync(userManager, superUser, IdentitySeedOptions.AdminRole);
-        await EnsureUserRoleAsync(userManager, superUser, IdentitySeedOptions.SuperAdminRole);
+        await RemoveLegacySuperAdminRoleAsync(roleManager, userManager, superUser);
     }
 
     private static async Task EnsureRoleAsync(RoleManager<IdentityRole> roleManager, string role)
@@ -66,5 +65,18 @@ public static class IdentityDataSeeder
         var result = await userManager.AddToRoleAsync(user, role);
         if (!result.Succeeded)
             throw new InvalidOperationException($"Falha ao associar role '{role}' ao usuario '{user.Email}': {string.Join(", ", result.Errors.Select(x => x.Description))}");
+    }
+
+    private static async Task RemoveLegacySuperAdminRoleAsync(RoleManager<IdentityRole> roleManager, UserManager<User> userManager, User user)
+    {
+        if (!await roleManager.RoleExistsAsync(IdentitySeedOptions.SuperAdminRole))
+            return;
+
+        if (!await userManager.IsInRoleAsync(user, IdentitySeedOptions.SuperAdminRole))
+            return;
+
+        var result = await userManager.RemoveFromRoleAsync(user, IdentitySeedOptions.SuperAdminRole);
+        if (!result.Succeeded)
+            throw new InvalidOperationException($"Falha ao remover role legada '{IdentitySeedOptions.SuperAdminRole}' do usuario '{user.Email}': {string.Join(", ", result.Errors.Select(x => x.Description))}");
     }
 }

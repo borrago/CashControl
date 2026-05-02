@@ -1,5 +1,5 @@
-using CashControl.Identity.Domain.Entities;
 using CashControl.Identity.Application.Services;
+using CashControl.Identity.Domain.Entities;
 using CashControl.Identity.Infra;
 using CashControl.Identity.Infra.Services;
 using Microsoft.AspNetCore.Hosting;
@@ -65,43 +65,45 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         confirmResponse.EnsureSuccessStatusCode();
     }
 
-    public async Task<(string UserId, string AccessToken, string RefreshToken)> RegisterAndLoginAsync(string email, string password, string? fullName = null)
+    public async Task<(string UserId, HttpClient Client)> RegisterAndLoginAsync(string email, string password, string? fullName = null)
     {
         await RegisterAsync(email, password, fullName);
         await ConfirmEmailAsync(email);
 
-        var client = CreateClient();
-        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
-        loginResponse.EnsureSuccessStatusCode();
-
-        var login = await loginResponse.Content.ReadFromJsonAsync<AuthTokenResponse>();
-        ArgumentNullException.ThrowIfNull(login);
+        var client = await CreateAuthenticatedClientAsync(email, password);
 
         using var scope = Services.CreateScope();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var user = await userManager.FindByEmailAsync(email);
         ArgumentNullException.ThrowIfNull(user);
 
-        return (user.Id, login.AccessToken!, login.RefreshToken!);
+        return (user.Id, client);
     }
 
-    public HttpClient CreateAuthenticatedClient(string accessToken)
+    public async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string password)
     {
-        var client = CreateClient();
-        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var client = CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+
+        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
+        loginResponse.EnsureSuccessStatusCode();
+        await AttachCsrfTokenAsync(client);
         return client;
     }
 
-    public async Task<string> CreateAdminAccessTokenAsync(string email = "admin@cashcontrol.com", string password = "Admin123")
+    public async Task<HttpClient> CreateAdminClientAsync(string email = "admin@cashcontrol.com", string password = "Admin123")
     {
         await EnsureUserAsync(email, password, "Admin User", tenant: User.DefaultTenant, isSuperUser: false, roles: [IdentitySeedOptions.AdminRole]);
-        return await LoginAndGetAccessTokenAsync(email, password);
+        return await CreateAuthenticatedClientAsync(email, password);
     }
 
-    public Task<string> CreateSuperAdminAccessTokenAsync(
+    public async Task<HttpClient> CreateSuperAdminClientAsync(
         string email = IdentitySeedOptions.SuperAdminEmail,
         string password = IdentitySeedOptions.SuperAdminPassword)
-        => LoginAndGetAccessTokenAsync(email, password);
+        => await CreateAuthenticatedClientAsync(email, password);
 
     public async Task<string> CreateUserAsync(
         string email,
@@ -159,27 +161,8 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return user is not null;
     }
 
-    public sealed class AuthTokenResponse
-    {
-        public string? AccessToken { get; set; }
-        public string? RefreshToken { get; set; }
-        public DateTime? RefreshTokenExpiresAtUtc { get; set; }
-    }
-
     public async Task<string> GetConfirmationTokenFromSentEmailAsync(string email)
         => await GetTokenFromSentEmailAsync(email, "Confirmacao de e-mail");
-
-    private async Task<string> LoginAndGetAccessTokenAsync(string email, string password)
-    {
-        var client = CreateClient();
-        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
-        loginResponse.EnsureSuccessStatusCode();
-
-        var login = await loginResponse.Content.ReadFromJsonAsync<AuthTokenResponse>();
-        ArgumentNullException.ThrowIfNull(login);
-
-        return login.AccessToken!;
-    }
 
     private async Task EnsureUserAsync(
         string email,
@@ -255,6 +238,19 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return Task.FromResult(token);
     }
 
+    private static async Task AttachCsrfTokenAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/v1/auth/csrf-token");
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadFromJsonAsync<CsrfTokenResponse>();
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentException.ThrowIfNullOrWhiteSpace(payload.RequestToken);
+
+        client.DefaultRequestHeaders.Remove(payload.HeaderName ?? "X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add(payload.HeaderName ?? "X-CSRF-TOKEN", payload.RequestToken);
+    }
+
     private static string ExtractQueryParameter(string content, string parameterName)
     {
         var marker = $"{parameterName}=";
@@ -266,5 +262,11 @@ public class IdentityApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         var end = content.IndexOfAny(['&', '\r', '\n'], start);
         var encodedValue = end >= 0 ? content[start..end] : content[start..];
         return Uri.UnescapeDataString(encodedValue.Trim());
+    }
+
+    private sealed class CsrfTokenResponse
+    {
+        public string RequestToken { get; set; } = string.Empty;
+        public string? HeaderName { get; set; }
     }
 }

@@ -10,9 +10,7 @@ public class ImpersonateUserCommandHandler(IIdentityService identityService) : I
 
     public async Task<ImpersonateUserCommandResult> Handle(ImpersonateUserCommandInput request, CancellationToken cancellationToken)
     {
-        var auth = await _identityService.ImpersonateAsync(request.UserId, cancellationToken);
-
-        return (ImpersonateUserCommandResult)new ImpersonateUserCommandResult(auth.AccessToken, auth.RefreshToken, auth.RefreshTokenExpiresAtUtc)
-            .WithHttpStatusCode(HttpStatusCode.OK);
+        await _identityService.ImpersonateAsync(request.UserId, cancellationToken);
+        return (ImpersonateUserCommandResult)new ImpersonateUserCommandResult().WithHttpStatusCode(HttpStatusCode.NoContent);
     }
 }

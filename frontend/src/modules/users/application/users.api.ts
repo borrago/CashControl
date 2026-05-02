@@ -14,4 +14,7 @@ export const usersApi = {
   revokeRefreshToken() {
     return httpClient.delete<void>("/users/me/refresh-token", { requiresAuth: true });
   },
+  stopImpersonation() {
+    return httpClient.post<void>("/users/me/stop-impersonation", undefined, { requiresAuth: true });
+  },
 };

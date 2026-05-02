@@ -14,9 +14,7 @@ async function bootstrap() {
 
   const sessionStore = useSessionStore(pinia);
   configureHttpClient({
-    getAccessToken: () => sessionStore.accessToken,
-    refreshSession: () => sessionStore.refreshSession(),
-    clearSession: () => sessionStore.logout({ redirect: false }),
+    clearSession: () => sessionStore.clearSession(),
   });
 
   await sessionStore.bootstrap();

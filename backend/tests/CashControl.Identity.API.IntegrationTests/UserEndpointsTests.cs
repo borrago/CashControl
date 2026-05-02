@@ -1,9 +1,7 @@
 using System.Net;
-using System.Net.Http.Headers;
 using CashControl.Core.API;
-using CashControl.Core.CrossCutting;
 using CashControl.Identity.Infra;
-using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace CashControl.Identity.API.IntegrationTests;
 
@@ -19,8 +17,7 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     [Fact]
     public async Task MeEndpoints_ShouldReturnAndUpdateCurrentUser()
     {
-        var (_, accessToken, _) = await _factory.RegisterAndLoginAsync("profile@cashcontrol.com", "Pass123", "Profile User");
-        var client = _factory.CreateAuthenticatedClient(accessToken);
+        var (_, client) = await _factory.RegisterAndLoginAsync("profile@cashcontrol.com", "Pass123", "Profile User");
 
         var meResponse = await client.GetAsync("/v1/users/me");
         Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
@@ -29,7 +26,7 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.NotNull(me);
         Assert.Equal("Profile User", me.FullName);
         Assert.Equal(1, me.Tenant);
-        Assert.False(me.IsSuperUser);
+        Assert.False(me.CanImpersonateUsers);
 
         var updateResponse = await client.PutAsync("/v1/users/me", JsonContent.Create(new
         {
@@ -46,7 +43,7 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.Equal("Updated Name", updated.FullName);
         Assert.Equal("5511988887777", updated.PhoneNumber);
         Assert.Equal(1, updated.Tenant);
-        Assert.False(updated.IsSuperUser);
+        Assert.False(updated.CanImpersonateUsers);
     }
 
     [Fact]
@@ -56,8 +53,7 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         const string password = "Pass123";
         const string newPassword = "Pass456";
 
-        var (_, accessToken, _) = await _factory.RegisterAndLoginAsync(email, password, "Change Password User");
-        var client = _factory.CreateAuthenticatedClient(accessToken);
+        var (_, client) = await _factory.RegisterAndLoginAsync(email, password, "Change Password User");
 
         var changeResponse = await client.PostAsync("/v1/users/me/change-password", JsonContent.Create(new
         {
@@ -67,28 +63,21 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
 
         Assert.Equal(HttpStatusCode.NoContent, changeResponse.StatusCode);
 
-        var loginClient = _factory.CreateClient();
-        var loginResponse = await loginClient.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password = newPassword }));
-        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        var loginClient = await _factory.CreateAuthenticatedClientAsync(email, newPassword);
+        var meResponse = await loginClient.GetAsync("/v1/users/me");
+        Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
     }
 
     [Fact]
-    public async Task RevokeRefreshToken_ShouldInvalidateCurrentRefreshToken()
+    public async Task RevokeRefreshToken_ShouldInvalidateCurrentSession()
     {
-        var (_, accessToken, refreshToken) = await _factory.RegisterAndLoginAsync("revoke@cashcontrol.com", "Pass123", "Revoke User");
-        var client = _factory.CreateAuthenticatedClient(accessToken);
+        var (_, client) = await _factory.RegisterAndLoginAsync("revoke@cashcontrol.com", "Pass123", "Revoke User");
 
         var revokeResponse = await client.DeleteAsync("/v1/users/me/refresh-token");
         Assert.Equal(HttpStatusCode.NoContent, revokeResponse.StatusCode);
 
-        var refreshClient = _factory.CreateClient();
-        var refreshResponse = await refreshClient.PostAsync("/v1/auth/refresh-token", JsonContent.Create(new
-        {
-            accessToken,
-            refreshToken
-        }));
-
-        Assert.Equal(HttpStatusCode.BadRequest, refreshResponse.StatusCode);
+        var meResponse = await client.GetAsync("/v1/users/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, meResponse.StatusCode);
     }
 
     [Fact]
@@ -105,10 +94,40 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
+    public async Task AuthenticatedWrite_ShouldRejectMissingCsrfToken()
+    {
+        const string email = "csrf@cashcontrol.com";
+        const string password = "Pass123";
+
+        await _factory.RegisterAsync(email, password, "Csrf User");
+        await _factory.ConfirmEmailAsync(email);
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+
+        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
+        Assert.Equal(HttpStatusCode.NoContent, loginResponse.StatusCode);
+
+        var updateResponse = await client.PutAsync("/v1/users/me", JsonContent.Create(new
+        {
+            fullName = "Blocked By Csrf",
+            phoneNumber = "5511999999999"
+        }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+        var error = await updateResponse.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("validation_error", error.Code);
+        Assert.Contains(error.Errors, detail => detail.PropertyName.Equals("Antiforgery", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task AdminEndpoint_ShouldRequireAdminRole()
     {
-        var (_, accessToken, _) = await _factory.RegisterAndLoginAsync("member-no-admin@cashcontrol.com", "Pass123", "Member");
-        var client = _factory.CreateAuthenticatedClient(accessToken);
+        var (_, client) = await _factory.RegisterAndLoginAsync("member-no-admin@cashcontrol.com", "Pass123", "Member");
         var targetUserId = await _factory.GetUserIdByEmailAsync("member-no-admin@cashcontrol.com");
 
         var response = await client.GetAsync($"/v1/admin/users/{targetUserId}");
@@ -122,8 +141,8 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     [Fact]
     public async Task AdminGetById_ShouldReturnRequestedUser()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync());
-        var (userId, _, _) = await _factory.RegisterAndLoginAsync("member-get@cashcontrol.com", "Pass123", "Member");
+        var client = await _factory.CreateAdminClientAsync();
+        var (userId, _) = await _factory.RegisterAndLoginAsync("member-get@cashcontrol.com", "Pass123", "Member");
 
         var getUserResponse = await client.GetAsync($"/v1/admin/users/{userId}");
         Assert.Equal(HttpStatusCode.OK, getUserResponse.StatusCode);
@@ -133,14 +152,14 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.Equal(userId, user.Id);
         Assert.Equal("Member", user.FullName);
         Assert.Equal(1, user.Tenant);
-        Assert.False(user.IsSuperUser);
+        Assert.False(user.CanImpersonateUsers);
     }
 
     [Fact]
     public async Task AdminAssignRole_ShouldPersistRole()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync());
-        var (userId, _, _) = await _factory.RegisterAndLoginAsync("member-assign@cashcontrol.com", "Pass123", "Member");
+        var client = await _factory.CreateAdminClientAsync();
+        var (userId, _) = await _factory.RegisterAndLoginAsync("member-assign@cashcontrol.com", "Pass123", "Member");
 
         var assignRoleResponse = await client.PutAsync($"/v1/admin/users/{userId}/roles/Manager", content: null);
         Assert.Equal(HttpStatusCode.NoContent, assignRoleResponse.StatusCode);
@@ -150,11 +169,25 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
+    public async Task AdminAssignRole_ShouldRejectLegacySuperAdminRole()
+    {
+        var client = await _factory.CreateAdminClientAsync();
+        var (userId, _) = await _factory.RegisterAndLoginAsync("member-legacy-role@cashcontrol.com", "Pass123", "Member");
+
+        var response = await client.PutAsync($"/v1/admin/users/{userId}/roles/{IdentitySeedOptions.SuperAdminRole}", content: null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("validation_error", error.Code);
+        Assert.Contains(error.Errors, detail => detail.ErrorMessage.Contains("descontinuada", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task AdminGetRoles_ShouldReturnCurrentRoles()
     {
-        var adminToken = await _factory.CreateAdminAccessTokenAsync();
-        var client = _factory.CreateAuthenticatedClient(adminToken);
-        var (userId, _, _) = await _factory.RegisterAndLoginAsync("member-roles@cashcontrol.com", "Pass123", "Member");
+        var client = await _factory.CreateAdminClientAsync();
+        var (userId, _) = await _factory.RegisterAndLoginAsync("member-roles@cashcontrol.com", "Pass123", "Member");
 
         await client.PutAsync($"/v1/admin/users/{userId}/roles/Manager", content: null);
 
@@ -169,8 +202,8 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     [Fact]
     public async Task AdminRemoveRole_ShouldDeleteAssignedRole()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync());
-        var (userId, _, _) = await _factory.RegisterAndLoginAsync("member-remove-role@cashcontrol.com", "Pass123", "Member");
+        var client = await _factory.CreateAdminClientAsync();
+        var (userId, _) = await _factory.RegisterAndLoginAsync("member-remove-role@cashcontrol.com", "Pass123", "Member");
 
         await client.PutAsync($"/v1/admin/users/{userId}/roles/Manager", content: null);
 
@@ -184,8 +217,8 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     [Fact]
     public async Task AdminDelete_ShouldRemoveUser()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync());
-        var (userId, _, _) = await _factory.RegisterAndLoginAsync("member-delete@cashcontrol.com", "Pass123", "Member");
+        var client = await _factory.CreateAdminClientAsync();
+        var (userId, _) = await _factory.RegisterAndLoginAsync("member-delete@cashcontrol.com", "Pass123", "Member");
 
         var deleteResponse = await client.DeleteAsync($"/v1/admin/users/{userId}");
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
@@ -195,7 +228,7 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     [Fact]
     public async Task AdminShouldNotManageUserFromAnotherTenant()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync("tenant-admin@cashcontrol.com", "Admin123"));
+        var client = await _factory.CreateAdminClientAsync("tenant-admin@cashcontrol.com", "Admin123");
         var externalUserId = await _factory.CreateUserAsync("tenant-two@cashcontrol.com", "Pass123", "Tenant Two", tenant: 2);
 
         var response = await client.GetAsync($"/v1/admin/users/{externalUserId}");
@@ -210,30 +243,59 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     [Fact]
     public async Task SuperAdminShouldImpersonateUserFromAnotherTenant()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateSuperAdminAccessTokenAsync());
+        var client = await _factory.CreateSuperAdminClientAsync();
         var targetUserId = await _factory.CreateUserAsync("tenant-three@cashcontrol.com", "Pass123", "Tenant Three", tenant: 3, roles: ["Manager"]);
 
         var response = await client.PostAsync($"/v1/admin/users/{targetUserId}/impersonate", content: null);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
-        var auth = await response.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
-        Assert.NotNull(auth);
-        Assert.False(string.IsNullOrWhiteSpace(auth.AccessToken));
-        Assert.Null(auth.RefreshToken);
-        Assert.Null(auth.RefreshTokenExpiresAtUtc);
+        var meResponse = await client.GetAsync("/v1/users/me");
+        Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
 
-        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(auth.AccessToken);
-        Assert.Equal(targetUserId, jwt.Claims.First(claim => claim.Type == JwtRegisteredClaimNames.Sub).Value);
-        Assert.Equal("3", jwt.Claims.First(claim => claim.Type == CustomClaimTypes.Tenant).Value);
-        Assert.Equal("true", jwt.Claims.First(claim => claim.Type == CustomClaimTypes.IsImpersonating).Value);
-        Assert.Equal(IdentitySeedOptions.SuperAdminEmail, jwt.Claims.First(claim => claim.Type == CustomClaimTypes.ImpersonatedByEmail).Value);
+        var me = await meResponse.Content.ReadFromJsonAsync<UserProfileResponse>();
+        Assert.NotNull(me);
+        Assert.Equal(targetUserId, me.Id);
+        Assert.Equal(3, me.Tenant);
+        Assert.Contains("Manager", me.Roles);
+
+        var adminResponse = await client.GetAsync($"/v1/admin/users/{targetUserId}");
+        Assert.Equal(HttpStatusCode.Forbidden, adminResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task SuperAdminShouldStopImpersonationAndRecoverOriginalSession()
+    {
+        var client = await _factory.CreateSuperAdminClientAsync();
+        var targetUserId = await _factory.CreateUserAsync("tenant-four@cashcontrol.com", "Pass123", "Tenant Four", tenant: 4, roles: ["Manager"]);
+
+        var impersonateResponse = await client.PostAsync($"/v1/admin/users/{targetUserId}/impersonate", content: null);
+        Assert.Equal(HttpStatusCode.NoContent, impersonateResponse.StatusCode);
+
+        var csrfRefresh = await client.GetAsync("/v1/auth/csrf-token");
+        Assert.Equal(HttpStatusCode.OK, csrfRefresh.StatusCode);
+        var csrf = await csrfRefresh.Content.ReadFromJsonAsync<CsrfTokenResponse>();
+        Assert.NotNull(csrf);
+        client.DefaultRequestHeaders.Remove(csrf.HeaderName ?? "X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add(csrf.HeaderName ?? "X-CSRF-TOKEN", csrf.RequestToken);
+
+        var stopResponse = await client.PostAsync("/v1/users/me/stop-impersonation", content: null);
+        Assert.Equal(HttpStatusCode.NoContent, stopResponse.StatusCode);
+
+        var meResponse = await client.GetAsync("/v1/users/me");
+        Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
+
+        var me = await meResponse.Content.ReadFromJsonAsync<UserProfileResponse>();
+        Assert.NotNull(me);
+        Assert.True(me.CanImpersonateUsers);
+        Assert.False(me.IsImpersonating);
+        Assert.Equal(IdentitySeedOptions.SuperAdminEmail, me.Email);
     }
 
     [Fact]
     public async Task AdminShouldNotImpersonateUsers()
     {
-        var client = _factory.CreateAuthenticatedClient(await _factory.CreateAdminAccessTokenAsync("plain-admin@cashcontrol.com", "Admin123"));
+        var client = await _factory.CreateAdminClientAsync("plain-admin@cashcontrol.com", "Admin123");
         var targetUserId = await _factory.CreateUserAsync("member-impersonation@cashcontrol.com", "Pass123", "Member");
 
         var response = await client.PostAsync($"/v1/admin/users/{targetUserId}/impersonate", content: null);
@@ -251,7 +313,10 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
         public string? FullName { get; set; }
         public string? PhoneNumber { get; set; }
         public int Tenant { get; set; }
-        public bool IsSuperUser { get; set; }
+        public bool CanImpersonateUsers { get; set; }
+        public bool IsImpersonating { get; set; }
+        public bool CanStopImpersonation { get; set; }
+        public string? ImpersonatedByEmail { get; set; }
         public IList<string> Roles { get; set; } = [];
     }
 
@@ -259,5 +324,11 @@ public class UserEndpointsTests : IClassFixture<IdentityApiFactory>
     {
         public string UserId { get; set; } = string.Empty;
         public IList<string> Roles { get; set; } = [];
+    }
+
+    private sealed class CsrfTokenResponse
+    {
+        public string RequestToken { get; set; } = string.Empty;
+        public string? HeaderName { get; set; }
     }
 }

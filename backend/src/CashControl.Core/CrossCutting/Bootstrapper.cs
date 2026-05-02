@@ -5,20 +5,21 @@ using Elastic.Apm.AspNetCore;
 using Elastic.Apm.Extensions.Hosting;
 using FluentValidation;
 using MediatR;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.IO.Compression;
 using System.Reflection;
-using System.Text;
 
 namespace CashControl.Core.CrossCutting;
 
@@ -68,6 +69,12 @@ public static class Bootstrapper
 
     private static IServiceCollection RegisterApi(this IServiceCollection services, CoreSettings settings)
     {
+        var isLocalLikeEnvironment = settings.HostEnvironment?.IsDevelopment() == true || string.Equals(settings.HostEnvironment?.EnvironmentName, "Test", StringComparison.OrdinalIgnoreCase);
+        var sessionCookieOptions = settings.Configuration?.GetSection("SessionCookie").Get<SessionCookieOptions>() ?? new SessionCookieOptions();
+        var antiforgeryOptions = settings.Configuration?.GetSection("Antiforgery").Get<AntiforgeryOptionsSettings>() ?? new AntiforgeryOptionsSettings();
+        ValidateHostCookieConfiguration(sessionCookieOptions.Name, sessionCookieOptions.Domain, "SessionCookie");
+        ValidateHostCookieConfiguration(antiforgeryOptions.CookieName, antiforgeryOptions.CookieDomain, "Antiforgery");
+
         // Memory Cache
         if (settings.ConfigureMemoryCache)
             services.AddMemoryCache();
@@ -115,11 +122,18 @@ public static class Bootstrapper
                     Title = "Serviço " + settings.SwaggerSettings.Name,
                     Version = "v1"
                 });
-                c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                c.AddSecurityDefinition("CookieAuth", new OpenApiSecurityScheme
+                {
+                    In = ParameterLocation.Cookie,
+                    Description = "Sessao autenticada via cookie da aplicacao.",
+                    Name = sessionCookieOptions.Name,
+                    Type = SecuritySchemeType.ApiKey
+                });
+                c.AddSecurityDefinition("CsrfHeader", new OpenApiSecurityScheme
                 {
                     In = ParameterLocation.Header,
-                    Description = "Por favor, insira o token JWT Bearer no campo.",
-                    Name = "Authorization",
+                    Description = "Header antiforgery obrigatorio para operacoes autenticadas de escrita.",
+                    Name = antiforgeryOptions.HeaderName,
                     Type = SecuritySchemeType.ApiKey
                 });
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -130,7 +144,18 @@ public static class Bootstrapper
                             Reference = new OpenApiReference
                             {
                                 Type = ReferenceType.SecurityScheme,
-                                Id = "Bearer"
+                                Id = "CookieAuth"
+                            }
+                        },
+                        new string[] { }
+                    },
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "CsrfHeader"
                             }
                         },
                         new string[] { }
@@ -141,61 +166,71 @@ public static class Bootstrapper
 
         if (settings.RegisterAuthenticationAndAuthorization)
         {
-            services.Configure<JwtOptions>(settings.Configuration!.GetSection("Jwt"));
-            var jwt = settings.Configuration!.GetSection("Jwt").Get<JwtOptions>()!;
-            var key = Encoding.UTF8.GetBytes(jwt.Key);
-
-            services.AddAuthentication(x =>
-            {
-                x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
-            .AddJwtBearer(options =>
-            {
-                options.TokenValidationParameters = new TokenValidationParameters
+            services.Configure<SessionCookieOptions>(settings.Configuration!.GetSection("SessionCookie"));
+            services.Configure<AntiforgeryOptionsSettings>(settings.Configuration!.GetSection("Antiforgery"));
+            services.AddAuthentication(IdentityConstants.ApplicationScheme)
+                .AddCookie(IdentityConstants.ApplicationScheme, options =>
                 {
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    ValidIssuer = jwt.Issuer,
-                    ValidAudience = jwt.Audience,
-                    IssuerSigningKey = new SymmetricSecurityKey(key),
-                    ClockSkew = TimeSpan.Zero
-                };
-                options.Events = new JwtBearerEvents
-                {
-                    OnChallenge = async context =>
+                    options.Cookie.Name = sessionCookieOptions.Name;
+                    options.Cookie.Domain = NormalizeCookieDomain(sessionCookieOptions.Domain);
+                    options.Cookie.HttpOnly = true;
+                    options.Cookie.SecurePolicy = isLocalLikeEnvironment ? CookieSecurePolicy.SameAsRequest : sessionCookieOptions.SecurePolicy;
+                    options.Cookie.SameSite = sessionCookieOptions.SameSite;
+                    options.Cookie.Path = "/";
+                    options.SlidingExpiration = sessionCookieOptions.SlidingExpiration;
+                    options.ExpireTimeSpan = TimeSpan.FromHours(sessionCookieOptions.ExpireHours);
+                    options.Events = new CookieAuthenticationEvents
                     {
-                        if (context.Response.HasStarted)
-                            return;
-
-                        context.HandleResponse();
-                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                        await context.Response.WriteAsJsonAsync(ApiErrorResponse.Unauthorized("Autenticacao obrigatoria."));
-                    },
-                    OnForbidden = async context =>
-                    {
-                        if (context.Response.HasStarted)
-                            return;
-
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        await context.Response.WriteAsJsonAsync(ApiErrorResponse.Forbidden("Voce nao tem permissao para acessar este recurso."));
-                    }
-                };
-            });
+                        OnRedirectToLogin = context =>
+                        {
+                            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            return context.Response.WriteAsJsonAsync(ApiErrorResponse.Unauthorized("Autenticacao obrigatoria."));
+                        },
+                        OnRedirectToAccessDenied = context =>
+                        {
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            return context.Response.WriteAsJsonAsync(ApiErrorResponse.Forbidden("Voce nao tem permissao para acessar este recurso."));
+                        }
+                    };
+                });
 
             services.AddAuthorization(options =>
             {
-                var defaultAuthorizationPolicyBuilder = new AuthorizationPolicyBuilder("Bearer");
-                defaultAuthorizationPolicyBuilder = defaultAuthorizationPolicyBuilder.RequireAuthenticatedUser();
-                options.DefaultPolicy = defaultAuthorizationPolicyBuilder.Build();
+                options.DefaultPolicy = new AuthorizationPolicyBuilder(IdentityConstants.ApplicationScheme)
+                    .RequireAuthenticatedUser()
+                    .Build();
+
+                options.AddPolicy("AdminOrSuperUser", policy =>
+                    policy.RequireAuthenticatedUser()
+                        .RequireAssertion(context =>
+                            context.User.IsInRole("Admin") ||
+                            string.Equals(context.User.FindFirst(CustomClaimTypes.IsSuperUser)?.Value, bool.TrueString, StringComparison.OrdinalIgnoreCase)));
+
+                options.AddPolicy("SuperUserOnly", policy =>
+                    policy.RequireAuthenticatedUser()
+                        .RequireAssertion(context =>
+                            string.Equals(context.User.FindFirst(CustomClaimTypes.IsSuperUser)?.Value, bool.TrueString, StringComparison.OrdinalIgnoreCase)));
             });
         }
 
+        services.AddAntiforgery(options =>
+        {
+            options.HeaderName = antiforgeryOptions.HeaderName;
+            options.Cookie.Name = antiforgeryOptions.CookieName;
+            options.Cookie.Domain = NormalizeCookieDomain(antiforgeryOptions.CookieDomain);
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = isLocalLikeEnvironment ? CookieSecurePolicy.SameAsRequest : antiforgeryOptions.SecurePolicy;
+            options.Cookie.SameSite = antiforgeryOptions.SameSite;
+            options.Cookie.Path = "/";
+            options.SuppressXFrameOptionsHeader = false;
+        });
+
         IMvcBuilder? builder = null;
         if (settings.AddDefaultControllers)
-            builder = services.AddControllers();
+            builder = services.AddControllersWithViews(options =>
+            {
+                options.Filters.Add(new ProducesAttribute("application/json"));
+            });
 
         return services;
     }
@@ -291,4 +326,13 @@ public static class Bootstrapper
 
         return app;
     }
+
+    private static void ValidateHostCookieConfiguration(string cookieName, string? cookieDomain, string sectionName)
+    {
+        if (cookieName.StartsWith("__Host-", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(cookieDomain))
+            throw new InvalidOperationException($"A configuracao '{sectionName}' nao pode definir Domain quando o cookie usa o prefixo __Host-.");
+    }
+
+    private static string? NormalizeCookieDomain(string? cookieDomain)
+        => string.IsNullOrWhiteSpace(cookieDomain) ? null : cookieDomain;
 }

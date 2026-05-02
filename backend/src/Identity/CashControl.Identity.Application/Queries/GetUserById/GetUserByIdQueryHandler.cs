@@ -22,7 +22,10 @@ public class GetUserByIdQueryHandler(IIdentityService identityService) : IQueryH
             FullName = result.FullName,
             PhoneNumber = result.PhoneNumber,
             Tenant = result.Tenant,
-            IsSuperUser = result.IsSuperUser,
+            CanImpersonateUsers = result.CanImpersonateUsers,
+            IsImpersonating = result.IsImpersonating,
+            CanStopImpersonation = result.CanStopImpersonation,
+            ImpersonatedByEmail = result.ImpersonatedByEmail,
             UserName = result.UserName,
             Roles = result.Roles,
         }.WithHttpStatusCode(HttpStatusCode.OK);

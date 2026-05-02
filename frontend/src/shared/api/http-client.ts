@@ -10,23 +10,32 @@ interface RequestOptions {
   headers?: Record<string, string>;
   requiresAuth?: boolean;
   query?: Record<string, QueryValue>;
-  retryOnUnauthorized?: boolean;
 }
 
 interface AuthBindings {
-  getAccessToken: () => string | null;
-  refreshSession: () => Promise<boolean>;
   clearSession: () => void;
 }
 
+interface CsrfTokenResponse {
+  requestToken: string;
+  headerName?: string | null;
+}
+
 const authBindings: AuthBindings = {
-  getAccessToken: () => null,
-  refreshSession: async () => false,
   clearSession: () => undefined,
 };
 
+let csrfRequestToken: string | null = null;
+let csrfHeaderName = "X-CSRF-TOKEN";
+let csrfFetchPromise: Promise<void> | null = null;
+
 export function configureHttpClient(bindings: Partial<AuthBindings>) {
   Object.assign(authBindings, bindings);
+}
+
+export function clearCsrfTokenCache() {
+  csrfRequestToken = null;
+  csrfFetchPromise = null;
 }
 
 function buildUrl(path: string, query?: Record<string, QueryValue>) {
@@ -50,6 +59,36 @@ function buildUrl(path: string, query?: Record<string, QueryValue>) {
   return url.toString();
 }
 
+async function ensureCsrfToken() {
+  if (csrfRequestToken) {
+    return;
+  }
+
+  if (!csrfFetchPromise) {
+    csrfFetchPromise = (async () => {
+      const response = await fetch(buildUrl("/auth/csrf-token"), {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw await parseApiError(response);
+      }
+
+      const payload = (await response.json()) as CsrfTokenResponse;
+      csrfRequestToken = payload.requestToken;
+      csrfHeaderName = payload.headerName || "X-CSRF-TOKEN";
+    })().finally(() => {
+      csrfFetchPromise = null;
+    });
+  }
+
+  await csrfFetchPromise;
+}
+
 async function request<TResponse>(path: string, options: RequestOptions = {}): Promise<TResponse> {
   const {
     method = "GET",
@@ -57,15 +96,17 @@ async function request<TResponse>(path: string, options: RequestOptions = {}): P
     headers = {},
     requiresAuth = false,
     query,
-    retryOnUnauthorized = true,
   } = options;
 
   const requestHeaders = new Headers(headers);
   requestHeaders.set("Accept", "application/json");
+  const needsCsrf = requiresAuth && method !== "GET";
 
-  const accessToken = requiresAuth ? authBindings.getAccessToken() : null;
-  if (accessToken) {
-    requestHeaders.set("Authorization", `Bearer ${accessToken}`);
+  if (needsCsrf) {
+    await ensureCsrfToken();
+    if (csrfRequestToken) {
+      requestHeaders.set(csrfHeaderName, csrfRequestToken);
+    }
   }
 
   const hasBody = body !== undefined;
@@ -77,19 +118,19 @@ async function request<TResponse>(path: string, options: RequestOptions = {}): P
     method,
     headers: requestHeaders,
     body: hasBody ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
 
-  if (response.status === 401 && requiresAuth && retryOnUnauthorized) {
-    const refreshed = await authBindings.refreshSession();
-
-    if (refreshed) {
-      return request<TResponse>(path, { ...options, retryOnUnauthorized: false });
-    }
-
+  if (response.status === 401 && requiresAuth) {
+    clearCsrfTokenCache();
     authBindings.clearSession();
   }
 
   if (!response.ok) {
+    if (response.status === 400 && needsCsrf) {
+      clearCsrfTokenCache();
+    }
+
     throw await parseApiError(response);
   }
 

@@ -3,6 +3,7 @@ using CashControl.Identity.API.Contracts.Api;
 using CashControl.Identity.API.Contracts.Users;
 using CashControl.Identity.Application.Commands.ChangePassword;
 using CashControl.Identity.Application.Commands.RevokeRefreshToken;
+using CashControl.Identity.Application.Commands.StopImpersonation;
 using CashControl.Identity.Application.Commands.UpdateProfile;
 using CashControl.Identity.Application.Queries.GetCurrentUser;
 using MediatR;
@@ -13,6 +14,7 @@ using System.Security.Claims;
 namespace CashControl.Identity.API.Controllers;
 
 [Authorize]
+[ValidateCsrfToken]
 [ApiController]
 [Route("v1/users")]
 [Produces("application/json")]
@@ -55,6 +57,14 @@ public class UsersController(IMediator mediator) : BaseController
     public async Task<IActionResult> RevokeRefreshToken(CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new RevokeRefreshTokenCommandInput(GetRequiredUserId()), cancellationToken);
+        return HandleMediatorResult(result);
+    }
+
+    [HttpPost("me/stop-impersonation")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> StopImpersonation(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new StopImpersonationCommandInput(), cancellationToken);
         return HandleMediatorResult(result);
     }
 

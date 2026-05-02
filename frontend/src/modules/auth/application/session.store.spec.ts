@@ -8,7 +8,6 @@ vi.mock("@/modules/auth/application/auth.api", () => ({
   authApi: {
     register: vi.fn(),
     login: vi.fn(),
-    refreshToken: vi.fn(),
     forgotPassword: vi.fn(),
     resetPassword: vi.fn(),
     confirmEmail: vi.fn(),
@@ -21,21 +20,17 @@ vi.mock("@/modules/users/application/users.api", () => ({
     updateProfile: vi.fn(),
     changePassword: vi.fn(),
     revokeRefreshToken: vi.fn(),
+    stopImpersonation: vi.fn(),
   },
 }));
 
 describe("session.store", () => {
   beforeEach(() => {
-    localStorage.clear();
     setActivePinia(createPinia());
   });
 
-  it("faz login, persiste tokens e carrega o usuário atual", async () => {
-    vi.mocked(authApi.login).mockResolvedValue({
-      accessToken: "access",
-      refreshToken: "refresh",
-      refreshTokenExpiresAtUtc: "2026-12-31T23:59:59Z",
-    });
+  it("faz login via cookie e carrega o usuario atual", async () => {
+    vi.mocked(authApi.login).mockResolvedValue();
 
     vi.mocked(usersApi.getCurrentUser).mockResolvedValue({
       id: "1",
@@ -56,6 +51,6 @@ describe("session.store", () => {
     expect(store.isAuthenticated).toBe(true);
     expect(store.isAdmin).toBe(true);
     expect(store.currentUser?.email).toBe("john@cashcontrol.com");
-    expect(localStorage.getItem("cashcontrol.access-token")).toBe("access");
+    expect(authApi.login).toHaveBeenCalledTimes(1);
   });
 });

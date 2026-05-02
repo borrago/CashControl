@@ -21,6 +21,29 @@ var coreSettings = new CoreSettings
 };
 
 builder.Services.AddInfrastructure(coreSettings);
+var corsOptions = builder.Configuration.GetSection("Cors").Get<CorsOptionsSettings>() ?? new CorsOptionsSettings();
+var topologyOptions = builder.Configuration.GetSection("DeploymentTopology").Get<DeploymentTopologyOptions>() ?? new DeploymentTopologyOptions();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        if (corsOptions.AllowedOrigins.Length == 0)
+            return;
+
+        policy.WithOrigins(corsOptions.AllowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+
+        if (corsOptions.AllowCredentials)
+            policy.AllowCredentials();
+    });
+});
+builder.Services.AddHsts(options =>
+{
+    options.Preload = true;
+    options.IncludeSubDomains = true;
+    options.MaxAge = TimeSpan.FromDays(180);
+});
 
 var securityOptions = builder.Configuration.GetSection("Security").Get<SecurityOptions>() ?? new SecurityOptions();
 builder.Services.AddRateLimiter(options =>
@@ -56,7 +79,12 @@ var app = builder.Build();
 
 await app.Services.SeedIdentityDataAsync();
 
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test") && topologyOptions.RequireHttps)
+    app.UseHsts();
+
 app.UseHttpsRedirection();
+if (corsOptions.AllowedOrigins.Length > 0)
+    app.UseCors("Frontend");
 app.UseCore(coreSettings);
 
 await app.RunAsync(cancellationToken);

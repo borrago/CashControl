@@ -8,6 +8,9 @@ export const adminUsersApi = {
   getRoles(userId: string) {
     return httpClient.get<UserRolesResponse>(`/admin/users/${userId}/roles`, { requiresAuth: true });
   },
+  impersonate(userId: string) {
+    return httpClient.post<void>(`/admin/users/${userId}/impersonate`, undefined, { requiresAuth: true });
+  },
   assignRole(userId: string, role: string) {
     return httpClient.put<void>(`/admin/users/${userId}/roles/${role}`, undefined, { requiresAuth: true });
   },

@@ -1,5 +1,4 @@
 using CashControl.Core.API;
-using CashControl.Identity.API.Contracts.Api;
 using CashControl.Identity.API.Contracts.Auth;
 using CashControl.Identity.Application.Commands.ConfirmEmail;
 using CashControl.Identity.Application.Commands.ForgotPassword;
@@ -8,17 +7,34 @@ using CashControl.Identity.Application.Commands.RefreshToken;
 using CashControl.Identity.Application.Commands.Register;
 using CashControl.Identity.Application.Commands.ResetPassword;
 using MediatR;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 
 namespace CashControl.Identity.API.Controllers;
 
 [ApiController]
 [Route("v1/auth")]
 [Produces("application/json")]
-public class AuthController(IMediator mediator) : BaseController
+public class AuthController(IMediator mediator, IAntiforgery antiforgery) : BaseController
 {
     private readonly IMediator _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
+    private readonly IAntiforgery _antiforgery = antiforgery ?? throw new ArgumentNullException(nameof(antiforgery));
+
+    [AllowAnonymous]
+    [HttpGet("csrf-token")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public IActionResult GetCsrfToken()
+    {
+        var tokens = _antiforgery.GetAndStoreTokens(HttpContext);
+        return Ok(new
+        {
+            requestToken = tokens.RequestToken,
+            headerName = tokens.HeaderName
+        });
+    }
 
     [HttpPost("register")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -34,7 +50,7 @@ public class AuthController(IMediator mediator) : BaseController
     }
 
     [HttpPost("login")]
-    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     [EnableRateLimiting("AuthSensitive")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
@@ -46,15 +62,13 @@ public class AuthController(IMediator mediator) : BaseController
         return HandleMediatorResult(result);
     }
 
+    [Authorize]
     [HttpPost("refresh-token")]
-    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
-    [EnableRateLimiting("AuthSensitive")]
-    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ValidateCsrfToken]
+    public async Task<IActionResult> RefreshToken(CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(
-            new RefreshTokenCommandInput(request.AccessToken, request.RefreshToken),
-            cancellationToken);
+        var result = await _mediator.Send(new RefreshTokenCommandInput(GetRequiredUserId()), cancellationToken);
 
         return HandleMediatorResult(result);
     }
@@ -89,4 +103,8 @@ public class AuthController(IMediator mediator) : BaseController
         var result = await _mediator.Send(new ConfirmEmailCommandInput(request.UserId, request.Token), cancellationToken);
         return HandleMediatorResult(result);
     }
+
+    private string GetRequiredUserId()
+        => User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? throw new UnauthorizedAccessException("Usuario autenticado sem identificador.");
 }

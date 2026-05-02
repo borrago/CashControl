@@ -5,10 +5,17 @@ import { createPinia } from "pinia";
 import AdminUsersView from "@/modules/admin/presentation/AdminUsersView.vue";
 import { adminUsersApi } from "@/modules/admin/application/admin-users.api";
 
+vi.mock("vue-router", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
+
 vi.mock("@/modules/admin/application/admin-users.api", () => ({
   adminUsersApi: {
     getById: vi.fn(),
     getRoles: vi.fn(),
+    impersonate: vi.fn(),
     assignRole: vi.fn(),
     removeRole: vi.fn(),
     deleteUser: vi.fn(),

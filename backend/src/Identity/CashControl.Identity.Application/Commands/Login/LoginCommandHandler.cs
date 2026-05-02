@@ -10,8 +10,7 @@ public class LoginCommandHandler(IIdentityService identityService) : ICommandHan
 
     public async Task<LoginCommandResult> Handle(LoginCommandInput request, CancellationToken cancellationToken)
     {
-        var login = await _identityService.LoginAsync(request.Email, request.Password, cancellationToken);
-
-        return (LoginCommandResult)new LoginCommandResult(login.AccessToken, login.RefreshToken, login.RefreshTokenExpiresAtUtc).WithHttpStatusCode(HttpStatusCode.OK);
+        await _identityService.LoginAsync(request.Email, request.Password, cancellationToken);
+        return (LoginCommandResult)new LoginCommandResult().WithHttpStatusCode(HttpStatusCode.NoContent);
     }
 }

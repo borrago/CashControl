@@ -1,22 +1,16 @@
-# CashControl
+# CashControl Identity
 
-Microservico de identidade do projeto CashControl, implementado em `.NET 8` com `ASP.NET Core`, `MediatR`, `ASP.NET Identity`, `Entity Framework Core` e `JWT`.
+Microservico de identidade do CashControl, implementado em `.NET 8` com:
 
-O projeto foi organizado com foco em `DDD`, `Clean Code` e `Onion Architecture`, separando responsabilidades entre `API`, `Application`, `Domain`, `Infra` e um `Core` compartilhado.
+- `ASP.NET Core`
+- `ASP.NET Core Identity`
+- `Entity Framework Core`
+- `MediatR`
+- `FluentValidation`
 
-## Visao Geral
+## Arquitetura
 
-A solucao atualmente concentra o contexto de identidade:
-
-- autenticacao com `JWT`
-- cadastro e login de usuarios
-- refresh token
-- confirmacao de email
-- recuperacao e reset de senha
-- gestao do perfil do usuario autenticado
-- gestao administrativa de usuarios e papeis
-
-## Estrutura
+Estrutura atual:
 
 ```text
 src/
@@ -30,58 +24,24 @@ tests/
   CashControl.Identity.API.IntegrationTests/
 ```
 
-### Camadas
-
-- `CashControl.Identity.API`
-  Exposicao HTTP, contratos de request e controllers.
-
-- `CashControl.Identity.Application`
-  Commands, queries, handlers, validators e contratos de servico.
-
-- `CashControl.Identity.Domain`
-  Entidades e regras centrais do dominio.
-
-- `CashControl.Identity.Infra`
-  Implementacao concreta do `IIdentityService`, `DbContext`, integracao com Identity e persistencia.
-
-- `CashControl.Core`
-  Infraestrutura compartilhada: middleware, bootstrap, autenticacao, swagger, pipeline do MediatR, health checks e helpers de resposta.
-
-## Arquitetura
-
-O fluxo principal da requisicao segue este caminho:
-
-```text
-HTTP Request
--> Controller
--> MediatR
--> Command/Query Handler
--> IIdentityService
--> ASP.NET Identity / EF Core
--> MediatorResult
--> HTTP Response
-```
-
 Direcao das dependencias:
 
 - `API` depende de `Application` e `Infra`
 - `Infra` depende de `Application` e `Domain`
-- `Application` depende apenas de `Core`
-- `Domain` depende apenas de `Core`
+- `Application` depende de `Core`
+- `Domain` depende de `Core`
 
-Isso evita acoplamento da camada de aplicacao com detalhes de infraestrutura.
+## Modelo de autenticacao
 
-## Principais Tecnologias
+O servico nao usa mais `Bearer token` para o frontend web.
 
-- `.NET 8`
-- `ASP.NET Core`
-- `MediatR`
-- `FluentValidation`
-- `ASP.NET Core Identity`
-- `Entity Framework Core`
-- `SQL Server`
-- `SQLite` para testes de integracao
-- `Swagger`
+Fluxo atual:
+
+1. `POST /v1/auth/login` valida credenciais.
+2. O backend cria uma sessao por cookie `HttpOnly`.
+3. O frontend chama `GET /v1/auth/csrf-token`.
+4. Toda operacao autenticada de escrita envia `X-CSRF-TOKEN`.
+5. `[Authorize]` valida a sessao pelo cookie do Identity.
 
 ## Endpoints
 
@@ -89,6 +49,7 @@ Isso evita acoplamento da camada de aplicacao com detalhes de infraestrutura.
 
 Base route: `v1/auth`
 
+- `GET /v1/auth/csrf-token`
 - `POST /v1/auth/register`
 - `POST /v1/auth/login`
 - `POST /v1/auth/refresh-token`
@@ -104,6 +65,7 @@ Base route: `v1/users`
 - `PUT /v1/users/me`
 - `POST /v1/users/me/change-password`
 - `DELETE /v1/users/me/refresh-token`
+- `POST /v1/users/me/stop-impersonation`
 
 ### Administracao
 
@@ -111,82 +73,77 @@ Base route: `v1/admin/users`
 
 - `GET /v1/admin/users/{userId}`
 - `GET /v1/admin/users/{userId}/roles`
+- `POST /v1/admin/users/{userId}/impersonate`
 - `PUT /v1/admin/users/{userId}/roles/{role}`
 - `DELETE /v1/admin/users/{userId}/roles/{role}`
 - `DELETE /v1/admin/users/{userId}`
 
-Os endpoints administrativos exigem um usuario autenticado com role `Admin`.
+## Seguranca
+
+Controles implementados:
+
+- cookie de sessao `HttpOnly`
+- CORS restrito por configuracao
+- `HSTS` fora de desenvolvimento e teste
+- CSRF explicito nas operacoes autenticadas de escrita
+- rate limit nas rotas sensiveis de autenticacao
+- lockout por repetidas tentativas invalidas
+- protecao de cookies `__Host-*`
+
+## Impersonacao
+
+Regras atuais:
+
+- apenas usuarios com `IsSuperUser = true` podem iniciar impersonacao
+- nao e permitido impersonar outro usuario com `IsSuperUser = true`
+- a sessao impersonada pode ser revertida por `POST /v1/users/me/stop-impersonation`
+- a UI recebe apenas capacidades derivadas, como permissao para impersonar e restaurar sessao
+
+Observacao:
+
+- a role `SuperAdmin` foi descontinuada como fonte de verdade
+- o privilegio global agora e controlado por `IsSuperUser`
+- a policy HTTP das rotas administrativas aceita `Admin` ou `IsSuperUser`
+- `IsSuperUser` permanece interno ao backend e nao faz parte do contrato publico da API
 
 ## Configuracao
 
-O arquivo principal de configuracao da API esta em [appsettings.json](/C:/Projetos/CashControl/src/Identity/CashControl.Identity.API/appsettings.json:1).
+Arquivo principal:
 
-Exemplo atual:
+- [appsettings.json](/C:/Projetos/CashControl/backend/src/Identity/CashControl.Identity.API/appsettings.json)
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost,1433;Database=MinhaApiDb;User Id=sa;Password=SuaSenha@123;TrustServerCertificate=True"
-  },
-  "Jwt": {
-    "Key": "SUA_CHAVE_SUPER_SECRETA_COM_PELO_MENOS_32_CARACTERES",
-    "Issuer": "MinhaApi",
-    "Audience": "MinhaApiClient",
-    "AccessTokenMinutes": 120,
-    "RefreshTokenDays": 7
-  }
-}
-```
+Secoes relevantes:
 
-Antes de rodar localmente:
+- `DeploymentTopology`
+- `Cors`
+- `SessionCookie`
+- `Antiforgery`
+- `Email`
+- `Security`
 
-1. Ajuste a `DefaultConnection` para o seu SQL Server.
-2. Defina uma chave JWT real com pelo menos 32 caracteres.
-3. Revise `Issuer` e `Audience` conforme o ambiente.
+Observacao importante:
 
-## Como Executar
+- se o cookie usar prefixo `__Host-`, nao configure `Domain`
 
-Na raiz da solucao:
+## Execucao
 
-```bash
+```powershell
+cd backend
 dotnet restore
 dotnet build CashControl.sln
-dotnet run --project src/Identity/CashControl.Identity.API/CashControl.Identity.API.csproj
+dotnet run --project src\\Identity\\CashControl.Identity.API\\CashControl.Identity.API.csproj
 ```
-
-Com a API em execucao, o Swagger fica disponivel no endpoint padrao configurado pelo Core.
 
 ## Testes
 
-O projeto usa testes de integracao com `WebApplicationFactory` e `SQLite` em memoria.
-
-Projeto de testes:
-
-- [CashControl.Identity.API.IntegrationTests.csproj](/C:/Projetos/CashControl/tests/CashControl.Identity.API.IntegrationTests/CashControl.Identity.API.IntegrationTests.csproj:1)
-
-Executar todos os testes:
-
-```bash
+```powershell
+cd backend
 dotnet test CashControl.sln
 ```
 
-A cobertura atual valida todos os endpoints publicos do microservico de identidade.
+Cobertura atual:
 
-## Pontos de Entrada Importantes
-
-- Inicializacao da API: [Program.cs](/C:/Projetos/CashControl/src/Identity/CashControl.Identity.API/Program.cs:1)
-- Bootstrap compartilhado: [Bootstrapper.cs](/C:/Projetos/CashControl/src/CashControl.Core/CrossCutting/Bootstrapper.cs:1)
-- Implementacao da regra de identidade: [IdentityService.cs](/C:/Projetos/CashControl/src/Identity/CashControl.Identity.Infra/Services/IdentityService.cs:1)
-
-## Observacoes
-
-- O projeto usa `ASP.NET Identity` como base para usuarios, senha, roles e tokens de confirmacao/reset.
-- O `refresh token` e sua expiracao sao persistidos na entidade `User`.
-- A serializacao de respostas passa pelo `BaseControllerHelper` do Core.
-- A telemetria com Elastic APM foi registrada via DI para evitar uso de API obsoleta.
-
-## Estado Atual
-
-- build da solucao sem warnings
-- testes de integracao cobrindo todos os endpoints
-- arquitetura ajustada para reduzir acoplamento entre camadas
+- `23/23` testes de integracao passando
+- fluxos autenticados e administrativos
+- protecao CSRF
+- impersonacao e retorno para a sessao original

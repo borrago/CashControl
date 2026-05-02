@@ -37,7 +37,7 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
     }
 
     [Fact]
-    public async Task Login_ShouldReturnTokensForConfirmedUser()
+    public async Task Login_ShouldCreateAuthenticatedSessionForConfirmedUser()
     {
         const string email = "login@cashcontrol.com";
         const string password = "Pass123";
@@ -47,40 +47,22 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
 
         var client = _factory.CreateClient();
         var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
-        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
-
-        var login = await loginResponse.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
-        Assert.NotNull(login);
-        Assert.False(string.IsNullOrWhiteSpace(login.AccessToken));
-        Assert.False(string.IsNullOrWhiteSpace(login.RefreshToken));
+        Assert.Equal(HttpStatusCode.NoContent, loginResponse.StatusCode);
+        Assert.Contains(loginResponse.Headers, header => header.Key == "Set-Cookie");
     }
 
     [Fact]
-    public async Task RefreshToken_ShouldIssueNewTokens()
+    public async Task RefreshToken_ShouldRefreshAuthenticatedSession()
     {
-        var client = _factory.CreateClient();
         const string email = "refresh@cashcontrol.com";
         const string password = "Pass123";
 
-        await _factory.RegisterAsync(email, password, "Refresh User");
-        await _factory.ConfirmEmailAsync(email);
+        var (_, client) = await _factory.RegisterAndLoginAsync(email, password, "Refresh User");
 
-        var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password }));
-        var login = await loginResponse.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
-        Assert.NotNull(login);
+        var refreshResponse = await client.PostAsync("/v1/auth/refresh-token", content: null);
 
-        var refreshResponse = await client.PostAsync("/v1/auth/refresh-token", JsonContent.Create(new
-        {
-            accessToken = login.AccessToken,
-            refreshToken = login.RefreshToken
-        }));
-
-        Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);
-
-        var refresh = await refreshResponse.Content.ReadFromJsonAsync<IdentityApiFactory.AuthTokenResponse>();
-        Assert.NotNull(refresh);
-        Assert.NotEqual(login.AccessToken, refresh.AccessToken);
-        Assert.NotEqual(login.RefreshToken, refresh.RefreshToken);
+        Assert.Equal(HttpStatusCode.NoContent, refreshResponse.StatusCode);
+        Assert.Contains(refreshResponse.Headers, header => header.Key == "Set-Cookie");
     }
 
     [Fact]
@@ -145,7 +127,7 @@ public class AuthEndpointsTests : IClassFixture<IdentityApiFactory>
         Assert.Equal(HttpStatusCode.NoContent, resetResponse.StatusCode);
 
         var loginResponse = await client.PostAsync("/v1/auth/login", JsonContent.Create(new { email, password = newPassword }));
-        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, loginResponse.StatusCode);
     }
 
     [Fact]

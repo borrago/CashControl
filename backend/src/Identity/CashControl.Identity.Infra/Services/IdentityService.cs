@@ -1,4 +1,3 @@
-using CashControl.Core.Application;
 using CashControl.Core.CrossCutting;
 using CashControl.Identity.Application.Services;
 using CashControl.Identity.Application.Services.DTOs;
@@ -7,11 +6,7 @@ using CashControl.Identity.Infra.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using CoreApplicationException = CashControl.Core.Application.ApplicationException;
 
 namespace CashControl.Identity.Infra.Services;
@@ -21,7 +16,6 @@ public class IdentityService(
     SignInManager<User> signInManager,
     RoleManager<IdentityRole> roleManager,
     IHttpContextAccessor httpContextAccessor,
-    IOptions<JwtOptions> jwtOptions,
     IOptions<EmailOptions> emailOptions,
     IIdentityEmailSender identityEmailSender) : IIdentityService
 {
@@ -29,7 +23,6 @@ public class IdentityService(
     private readonly SignInManager<User> _signInManager = signInManager;
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
-    private readonly JwtOptions _jwtOptions = jwtOptions.Value;
     private readonly EmailOptions _emailOptions = emailOptions.Value;
     private readonly IIdentityEmailSender _identityEmailSender = identityEmailSender;
 
@@ -57,7 +50,7 @@ public class IdentityService(
         await SendConfirmationEmailAsync(user, cancellationToken);
     }
 
-    public async Task<AuthResponseDto> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+    public async Task LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.Trim();
         var user = await _userManager.FindByEmailAsync(normalizedEmail)
@@ -73,39 +66,36 @@ public class IdentityService(
         if (!signInResult.Succeeded)
             throw new CoreApplicationException("Usuario ou senha invalidos.");
 
-        return await IssueTokensAsync(user);
+        await _signInManager.SignInAsync(user, isPersistent: false);
     }
 
-    public async Task<AuthResponseDto> RefreshTokenAsync(string accessToken, string refreshToken, CancellationToken cancellationToken = default)
+    public async Task RefreshSessionAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var principal = GetPrincipalFromExpiredToken(accessToken);
-        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
-
-        if (string.IsNullOrWhiteSpace(userId))
-            throw new CoreApplicationException("Token invalido.");
-
-        if (bool.TryParse(principal.FindFirstValue(CustomClaimTypes.IsImpersonating), out var isImpersonating) && isImpersonating)
-            throw new CoreApplicationException("Sessao de impersonacao nao suporta refresh token.");
-
-        var user = await _userManager.FindByIdAsync(userId)
-            ?? throw new CoreApplicationException("Usuario nao encontrado.");
-
-        if (!user.EmailConfirmed)
-            throw new CoreApplicationException("E-mail nao confirmado.");
-
-        if (user.RefreshToken != refreshToken || user.RefreshTokenExpiryTimeUtc is null || user.RefreshTokenExpiryTimeUtc <= DateTime.UtcNow)
-            throw new CoreApplicationException("Refresh token invalido ou expirado.");
-
-        return await IssueTokensAsync(user);
+        var user = await GetRequiredUserAsync(userId);
+        await RefreshCurrentSessionAsync(user);
     }
 
-    public async Task RevokeRefreshTokenAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task SignOutAsync(string userId, CancellationToken cancellationToken = default)
     {
         var user = await GetRequiredUserAsync(userId);
         user.RevokeRefreshToken();
-
         await UpdateUserAsync(user);
+        await _signInManager.SignOutAsync();
+    }
+
+    public async Task StopImpersonationAsync(CancellationToken cancellationToken = default)
+    {
+        var principal = GetRequiredPrincipal();
+        var originalUserId = principal.FindFirstValue(CustomClaimTypes.ImpersonatedByUserId);
+
+        if (string.IsNullOrWhiteSpace(originalUserId))
+            throw new CoreApplicationException("A sessao atual nao esta em modo de impersonacao.");
+
+        var originalUser = await GetRequiredUserAsync(originalUserId);
+        if (!originalUser.IsSuperUser)
+            throw new CoreApplicationException("A sessao original nao possui privilegios para retomar a impersonacao.");
+
+        await _signInManager.SignInAsync(originalUser, isPersistent: false);
     }
 
     public async Task ConfirmEmailAsync(string userId, string token, CancellationToken cancellationToken = default)
@@ -143,6 +133,8 @@ public class IdentityService(
 
         if (!result.Succeeded)
             throw CreateApplicationException(result);
+
+        await RefreshCurrentSessionAsync(user);
     }
 
     public async Task<UserDto?> GetByIdAsync(string userId, CancellationToken cancellationToken = default)
@@ -151,8 +143,11 @@ public class IdentityService(
         return await MapUserAsync(user);
     }
 
-    public Task<UserDto?> GetCurrentUserAsync(string userId, CancellationToken cancellationToken = default)
-        => GetByIdAsync(userId, cancellationToken);
+    public async Task<UserDto?> GetCurrentUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var user = await GetRequiredUserAsync(userId);
+        return await MapUserAsync(user, GetRequiredPrincipal());
+    }
 
     public async Task UpdateProfileAsync(string userId, string? fullName, string? phoneNumber, CancellationToken cancellationToken = default)
     {
@@ -160,16 +155,14 @@ public class IdentityService(
         user.UpdateProfile(fullName, phoneNumber);
 
         await UpdateUserAsync(user);
+        await RefreshCurrentSessionAsync(user);
     }
 
     public async Task AssignRoleAsync(string userId, string role, CancellationToken cancellationToken = default)
     {
-        var actor = GetRequiredActor();
         var normalizedRole = role.Trim();
         var user = await GetAccessibleUserAsync(userId);
-
-        if (!actor.IsSuperUser && normalizedRole.Equals(IdentitySeedOptions.SuperAdminRole, StringComparison.OrdinalIgnoreCase))
-            throw new CoreApplicationException("Somente o super usuario pode atribuir a role SuperAdmin.");
+        EnsureNotReservedSystemRole(normalizedRole);
 
         if (!await _roleManager.RoleExistsAsync(normalizedRole))
         {
@@ -188,12 +181,9 @@ public class IdentityService(
 
     public async Task RemoveRoleAsync(string userId, string role, CancellationToken cancellationToken = default)
     {
-        var actor = GetRequiredActor();
         var normalizedRole = role.Trim();
         var user = await GetAccessibleUserAsync(userId);
-
-        if (!actor.IsSuperUser && normalizedRole.Equals(IdentitySeedOptions.SuperAdminRole, StringComparison.OrdinalIgnoreCase))
-            throw new CoreApplicationException("Somente o super usuario pode remover a role SuperAdmin.");
+        EnsureNotReservedSystemRole(normalizedRole);
 
         var result = await _userManager.RemoveFromRoleAsync(user, normalizedRole);
         if (!result.Succeeded)
@@ -219,9 +209,12 @@ public class IdentityService(
             throw CreateApplicationException(result);
     }
 
-    public async Task<AuthResponseDto> ImpersonateAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task ImpersonateAsync(string userId, CancellationToken cancellationToken = default)
     {
         var actor = GetRequiredActor();
+        if (actor.IsImpersonating)
+            throw new CoreApplicationException("Nao e permitido iniciar uma nova impersonacao antes de encerrar a sessao atual.");
+
         if (!actor.IsSuperUser)
             throw new CoreApplicationException("Somente o super usuario pode impersonar usuarios.");
 
@@ -229,20 +222,14 @@ public class IdentityService(
         if (targetUser.IsSuperUser)
             throw new CoreApplicationException("Nao e permitido impersonar outro super usuario.");
 
-        var accessToken = await GenerateAccessTokenAsync(targetUser, actor);
-        return new AuthResponseDto(accessToken, null, null);
-    }
+        var claims = new List<Claim>
+        {
+            new(CustomClaimTypes.IsImpersonating, bool.TrueString.ToLowerInvariant()),
+            new(CustomClaimTypes.ImpersonatedByUserId, actor.UserId),
+            new(CustomClaimTypes.ImpersonatedByEmail, actor.Email ?? string.Empty)
+        };
 
-    private async Task<AuthResponseDto> IssueTokensAsync(User user)
-    {
-        var accessToken = await GenerateAccessTokenAsync(user);
-        var refreshToken = GenerateRefreshToken();
-        var refreshTokenExpiresAtUtc = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays);
-
-        user.SetRefreshToken(refreshToken, refreshTokenExpiresAtUtc);
-        await UpdateUserAsync(user);
-
-        return new AuthResponseDto(accessToken, refreshToken, refreshTokenExpiresAtUtc);
+        await _signInManager.SignInWithClaimsAsync(targetUser, isPersistent: false, claims);
     }
 
     private async Task<User> GetRequiredUserAsync(string userId)
@@ -265,9 +252,11 @@ public class IdentityService(
         return user;
     }
 
-    private async Task<UserDto> MapUserAsync(User user)
+    private async Task<UserDto> MapUserAsync(User user, ClaimsPrincipal? principal = null)
     {
         var roles = await _userManager.GetRolesAsync(user);
+        var isImpersonating = bool.TryParse(principal?.FindFirstValue(CustomClaimTypes.IsImpersonating), out var parsedIsImpersonating) && parsedIsImpersonating;
+        var impersonatedByEmail = principal?.FindFirstValue(CustomClaimTypes.ImpersonatedByEmail);
 
         return new UserDto
         {
@@ -277,7 +266,10 @@ public class IdentityService(
             FullName = user.FullName,
             PhoneNumber = user.PhoneNumber,
             Tenant = user.Tenant,
-            IsSuperUser = user.IsSuperUser,
+            CanImpersonateUsers = GetRequiredActor().IsSuperUser && !isImpersonating,
+            IsImpersonating = isImpersonating,
+            CanStopImpersonation = isImpersonating && !string.IsNullOrWhiteSpace(principal?.FindFirstValue(CustomClaimTypes.ImpersonatedByUserId)),
+            ImpersonatedByEmail = impersonatedByEmail,
             Roles = roles
         };
     }
@@ -289,94 +281,53 @@ public class IdentityService(
             throw CreateApplicationException(result);
     }
 
-    private async Task<string> GenerateAccessTokenAsync(User user, RequestActorContext? impersonatedBy = null)
-    {
-        var roles = await _userManager.GetRolesAsync(user);
-
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(ClaimTypes.NameIdentifier, user.Id),
-            new(ClaimTypes.Name, user.UserName ?? string.Empty),
-            new(ClaimTypes.Email, user.Email ?? string.Empty),
-            new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(CustomClaimTypes.Tenant, user.Tenant.ToString()),
-            new(CustomClaimTypes.IsSuperUser, user.IsSuperUser.ToString().ToLowerInvariant())
-        };
-
-        claims.AddRange(roles.Select(roleValue => new Claim(ClaimTypes.Role, roleValue)));
-
-        if (impersonatedBy is not null)
-        {
-            claims.Add(new Claim(CustomClaimTypes.IsImpersonating, bool.TrueString.ToLowerInvariant()));
-            claims.Add(new Claim(CustomClaimTypes.ImpersonatedByUserId, impersonatedBy.UserId));
-            claims.Add(new Claim(CustomClaimTypes.ImpersonatedByEmail, impersonatedBy.Email ?? string.Empty));
-        }
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Key));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var token = new JwtSecurityToken(
-            issuer: _jwtOptions.Issuer,
-            audience: _jwtOptions.Audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenMinutes),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
-
-    private static string GenerateRefreshToken()
-    {
-        var randomBytes = RandomNumberGenerator.GetBytes(64);
-        return Convert.ToBase64String(randomBytes);
-    }
-
-    private ClaimsPrincipal GetPrincipalFromExpiredToken(string token)
-    {
-        var tokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateAudience = true,
-            ValidateIssuer = true,
-            ValidateIssuerSigningKey = true,
-            ValidateLifetime = false,
-            ValidIssuer = _jwtOptions.Issuer,
-            ValidAudience = _jwtOptions.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Key))
-        };
-
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out var securityToken);
-
-        if (securityToken is not JwtSecurityToken jwtSecurityToken ||
-            !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
-        {
-            throw new SecurityTokenException("Token invalido.");
-        }
-
-        return principal;
-    }
-
     private static CoreApplicationException CreateApplicationException(IdentityResult result)
         => new(result.Errors.Select(error => new CustomValidationFailure(error.Code, error.Description)));
 
+    private static void EnsureNotReservedSystemRole(string normalizedRole)
+    {
+        if (normalizedRole.Equals(IdentitySeedOptions.SuperAdminRole, StringComparison.OrdinalIgnoreCase))
+            throw new CoreApplicationException("A role SuperAdmin esta descontinuada. O privilegio global agora e controlado exclusivamente por IsSuperUser.");
+    }
+
+    private ClaimsPrincipal GetRequiredPrincipal()
+        => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated == true
+            ? _httpContextAccessor.HttpContext.User
+            : throw new CoreApplicationException("Usuario autenticado nao encontrado.");
+
     private RequestActorContext GetRequiredActor()
     {
-        var principal = _httpContextAccessor.HttpContext?.User;
-        if (principal?.Identity?.IsAuthenticated != true)
-            throw new CoreApplicationException("Usuario autenticado nao encontrado.");
-
+        var principal = GetRequiredPrincipal();
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
             ?? throw new CoreApplicationException("Usuario autenticado sem identificador.");
 
-        var email = principal.FindFirstValue(JwtRegisteredClaimNames.Email)
-            ?? principal.FindFirstValue(ClaimTypes.Email);
+        var email = principal.FindFirstValue(ClaimTypes.Email);
         var isSuperUser = bool.TryParse(principal.FindFirstValue(CustomClaimTypes.IsSuperUser), out var parsedIsSuperUser) && parsedIsSuperUser;
         var tenant = int.TryParse(principal.FindFirstValue(CustomClaimTypes.Tenant), out var parsedTenant) ? parsedTenant : 0;
+        var isImpersonating = bool.TryParse(principal.FindFirstValue(CustomClaimTypes.IsImpersonating), out var parsedIsImpersonating) && parsedIsImpersonating;
 
-        return new RequestActorContext(userId, email, tenant, isSuperUser);
+        return new RequestActorContext(userId, email, tenant, isSuperUser, isImpersonating);
+    }
+
+    private async Task RefreshCurrentSessionAsync(User user)
+    {
+        var principal = GetRequiredPrincipal();
+        var isImpersonating = bool.TryParse(principal.FindFirstValue(CustomClaimTypes.IsImpersonating), out var parsedIsImpersonating) && parsedIsImpersonating;
+
+        if (!isImpersonating)
+        {
+            await _signInManager.RefreshSignInAsync(user);
+            return;
+        }
+
+        var claims = new List<Claim>
+        {
+            new(CustomClaimTypes.IsImpersonating, bool.TrueString.ToLowerInvariant()),
+            new(CustomClaimTypes.ImpersonatedByUserId, principal.FindFirstValue(CustomClaimTypes.ImpersonatedByUserId) ?? string.Empty),
+            new(CustomClaimTypes.ImpersonatedByEmail, principal.FindFirstValue(CustomClaimTypes.ImpersonatedByEmail) ?? string.Empty)
+        };
+
+        await _signInManager.SignInWithClaimsAsync(user, isPersistent: false, claims);
     }
 
     private async Task SendConfirmationEmailAsync(User user, CancellationToken cancellationToken)
@@ -432,5 +383,5 @@ public class IdentityService(
         return $"{baseUrl}{separator}{queryString}";
     }
 
-    private sealed record RequestActorContext(string UserId, string? Email, int Tenant, bool IsSuperUser);
+    private sealed record RequestActorContext(string UserId, string? Email, int Tenant, bool IsSuperUser, bool IsImpersonating);
 }

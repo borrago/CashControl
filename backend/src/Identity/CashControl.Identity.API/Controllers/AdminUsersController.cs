@@ -12,7 +12,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CashControl.Identity.API.Controllers;
 
-[Authorize(Roles = "Admin,SuperAdmin")]
+[Authorize(Policy = "AdminOrSuperUser")]
+[ValidateCsrfToken]
 [ApiController]
 [Route("v1/admin/users")]
 [Produces("application/json")]
@@ -36,9 +37,9 @@ public class AdminUsersController(IMediator mediator) : BaseController
         return HandleMediatorResult(result);
     }
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = "SuperUserOnly")]
     [HttpPost("{userId}/impersonate")]
-    [ProducesResponseType(typeof(AuthTokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Impersonate(string userId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new ImpersonateUserCommandInput(userId), cancellationToken);

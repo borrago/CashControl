@@ -1,5 +1,5 @@
 <template>
-  <BaseCard title="Entrar" subtitle="Usa os endpoints de login, refresh automático e leitura do usuário autenticado.">
+  <BaseCard title="Entrar" subtitle="Usa login por cookie de sessão e leitura do usuário autenticado.">
     <form class="form" @submit.prevent="handleSubmit">
       <StatusBanner :message="statusMessage" :tone="statusTone" />
 

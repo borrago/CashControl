@@ -1,24 +1,24 @@
 <template>
   <div class="page-grid">
-    <BaseCard title="Operação pronta para o backend atual" subtitle="O frontend cobre autenticação, autosserviço do usuário e administração.">
+    <BaseCard title="Operacao pronta para o backend atual" subtitle="O frontend cobre autenticacao por sessao, autosservico do usuario e administracao.">
       <div class="three-columns">
         <article class="metric">
           <strong>Auth</strong>
-          <span>registro, login, refresh, confirmação e reset</span>
+          <span>registro, login por cookie, confirmacao e reset</span>
         </article>
         <article class="metric">
-          <strong>Usuário</strong>
-          <span>perfil, alteração de senha e revogação de refresh token</span>
+          <strong>Usuario</strong>
+          <span>perfil, alteracao de senha e encerramento de sessao</span>
         </article>
         <article class="metric">
           <strong>Admin</strong>
-          <span>busca, papéis e remoção de usuários</span>
+          <span>busca, papeis e remocao de usuarios</span>
         </article>
       </div>
     </BaseCard>
 
     <div class="two-columns">
-      <BaseCard title="Fluxo público" subtitle="Entradas que não exigem sessão.">
+      <BaseCard title="Fluxo publico" subtitle="Entradas que nao exigem sessao.">
         <ul class="links">
           <li><RouterLink to="/login">Entrar com credenciais</RouterLink></li>
           <li><RouterLink to="/register">Criar conta</RouterLink></li>
@@ -28,9 +28,9 @@
         </ul>
       </BaseCard>
 
-      <BaseCard title="Fluxo autenticado" subtitle="Recursos dependentes do JWT.">
+      <BaseCard title="Fluxo autenticado" subtitle="Recursos protegidos pela sessao do navegador.">
         <ul class="links">
-          <li><RouterLink to="/profile">Abrir painel do usuário</RouterLink></li>
+          <li><RouterLink to="/profile">Abrir painel do usuario</RouterLink></li>
           <li><RouterLink to="/admin/users">Abrir console administrativo</RouterLink></li>
         </ul>
       </BaseCard>

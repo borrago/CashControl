@@ -10,7 +10,7 @@ public class RevokeRefreshTokenCommandHandler(IIdentityService identityService) 
 
     public async Task<RevokeRefreshTokenCommandResult> Handle(RevokeRefreshTokenCommandInput request, CancellationToken cancellationToken)
     {
-        await _identityService.RevokeRefreshTokenAsync(request.UserId, cancellationToken);
+        await _identityService.SignOutAsync(request.UserId, cancellationToken);
 
         return (RevokeRefreshTokenCommandResult)new RevokeRefreshTokenCommandResult().WithHttpStatusCode(HttpStatusCode.NoContent);
     }

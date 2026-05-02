@@ -38,6 +38,7 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<Context>()
             .AddDefaultTokenProviders();
 
+        services.AddScoped<IUserClaimsPrincipalFactory<User>, CashControlUserClaimsPrincipalFactory>();
         services.Configure<EmailOptions>(settings.Configuration!.GetSection("Email"));
         services.Configure<SecurityOptions>(settings.Configuration!.GetSection("Security"));
         services.AddScoped<IIdentityEmailSender, LoggingIdentityEmailSender>();

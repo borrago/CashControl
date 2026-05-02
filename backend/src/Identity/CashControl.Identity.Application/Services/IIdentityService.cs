@@ -1,4 +1,4 @@
-﻿using CashControl.Identity.Application.Services.DTOs;
+using CashControl.Identity.Application.Services.DTOs;
 
 namespace CashControl.Identity.Application.Services;
 
@@ -6,11 +6,13 @@ public interface IIdentityService
 {
     Task RegisterAsync(string email, string password, string? fullName, CancellationToken cancellationToken = default);
 
-    Task<AuthResponseDto> LoginAsync(string email, string password, CancellationToken cancellationToken = default);
+    Task LoginAsync(string email, string password, CancellationToken cancellationToken = default);
 
-    Task<AuthResponseDto> RefreshTokenAsync(string accessToken, string refreshToken, CancellationToken cancellationToken = default);
+    Task RefreshSessionAsync(string userId, CancellationToken cancellationToken = default);
 
-    Task RevokeRefreshTokenAsync(string userId, CancellationToken cancellationToken = default);
+    Task SignOutAsync(string userId, CancellationToken cancellationToken = default);
+
+    Task StopImpersonationAsync(CancellationToken cancellationToken = default);
 
     Task ConfirmEmailAsync(string userId, string token, CancellationToken cancellationToken = default);
 
@@ -34,5 +36,5 @@ public interface IIdentityService
 
     Task DeleteUserAsync(string userId, CancellationToken cancellationToken = default);
 
-    Task<AuthResponseDto> ImpersonateAsync(string userId, CancellationToken cancellationToken = default);
+    Task ImpersonateAsync(string userId, CancellationToken cancellationToken = default);
 }

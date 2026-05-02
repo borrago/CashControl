@@ -10,6 +10,9 @@ public class GetCurrentUserQueryResult : QueryResult, IQueryResultItem
     public string? FullName { get; set; }
     public string? PhoneNumber { get; set; }
     public int Tenant { get; set; }
-    public bool IsSuperUser { get; set; }
+    public bool CanImpersonateUsers { get; set; }
+    public bool IsImpersonating { get; set; }
+    public bool CanStopImpersonation { get; set; }
+    public string? ImpersonatedByEmail { get; set; }
     public IList<string> Roles { get; set; } = [];
 }

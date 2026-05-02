@@ -21,9 +21,3 @@ export interface ConfirmEmailPayload {
   userId: string;
   token: string;
 }
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  refreshTokenExpiresAtUtc: string;
-}

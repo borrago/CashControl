@@ -2,8 +2,8 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { authApi } from "@/modules/auth/application/auth.api";
 import { usersApi } from "@/modules/users/application/users.api";
+import { clearCsrfTokenCache } from "@/shared/api/http-client";
 import type {
-  AuthTokens,
   ConfirmEmailPayload,
   ForgotPasswordPayload,
   LoginPayload,
@@ -11,32 +11,19 @@ import type {
   ResetPasswordPayload,
 } from "@/modules/auth/domain/auth.types";
 import type { ChangePasswordPayload, UpdateProfilePayload, UserProfile } from "@/modules/users/domain/user.types";
-import { sessionStorageService } from "@/shared/storage/session-storage";
 
 export const useSessionStore = defineStore("session", () => {
-  const accessToken = ref<string | null>(null);
-  const refreshToken = ref<string | null>(null);
-  const refreshTokenExpiresAtUtc = ref<string | null>(null);
   const currentUser = ref<UserProfile | null>(null);
   const isBootstrapped = ref(false);
-  const isRefreshing = ref(false);
 
-  const isAuthenticated = computed(() => Boolean(accessToken.value && refreshToken.value));
+  const isAuthenticated = computed(() => currentUser.value !== null);
   const isAdmin = computed(() => currentUser.value?.roles.includes("Admin") ?? false);
-
-  function persistTokens(tokens: AuthTokens) {
-    accessToken.value = tokens.accessToken;
-    refreshToken.value = tokens.refreshToken;
-    refreshTokenExpiresAtUtc.value = tokens.refreshTokenExpiresAtUtc;
-    sessionStorageService.write(tokens);
-  }
+  const isImpersonating = computed(() => currentUser.value?.isImpersonating ?? false);
+  const canStopImpersonation = computed(() => currentUser.value?.canStopImpersonation ?? false);
 
   function clearSession() {
-    accessToken.value = null;
-    refreshToken.value = null;
-    refreshTokenExpiresAtUtc.value = null;
     currentUser.value = null;
-    sessionStorageService.clear();
+    clearCsrfTokenCache();
   }
 
   async function bootstrap() {
@@ -44,21 +31,13 @@ export const useSessionStore = defineStore("session", () => {
       return;
     }
 
-    const stored = sessionStorageService.read();
-
-    if (stored) {
-      accessToken.value = stored.accessToken;
-      refreshToken.value = stored.refreshToken;
-      refreshTokenExpiresAtUtc.value = stored.refreshTokenExpiresAtUtc;
-
-      try {
-        await loadCurrentUser();
-      } catch {
-        clearSession();
-      }
+    try {
+      await loadCurrentUser();
+    } catch {
+      clearSession();
+    } finally {
+      isBootstrapped.value = true;
     }
-
-    isBootstrapped.value = true;
   }
 
   async function loadCurrentUser() {
@@ -71,33 +50,9 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   async function login(payload: LoginPayload) {
-    const tokens = await authApi.login(payload);
-    persistTokens(tokens);
+    await authApi.login(payload);
+    clearCsrfTokenCache();
     await loadCurrentUser();
-  }
-
-  async function refreshSession(): Promise<boolean> {
-    if (isRefreshing.value || !accessToken.value || !refreshToken.value || !refreshTokenExpiresAtUtc.value) {
-      return false;
-    }
-
-    try {
-      isRefreshing.value = true;
-
-      const tokens = await authApi.refreshToken({
-        accessToken: accessToken.value,
-        refreshToken: refreshToken.value,
-        refreshTokenExpiresAtUtc: refreshTokenExpiresAtUtc.value,
-      });
-
-      persistTokens(tokens);
-      return true;
-    } catch {
-      clearSession();
-      return false;
-    } finally {
-      isRefreshing.value = false;
-    }
   }
 
   async function forgotPassword(payload: ForgotPasswordPayload) {
@@ -126,23 +81,37 @@ export const useSessionStore = defineStore("session", () => {
     clearSession();
   }
 
-  function logout(options: { redirect?: boolean } = {}) {
+  async function stopImpersonation() {
+    await usersApi.stopImpersonation();
+    clearCsrfTokenCache();
+    await loadCurrentUser();
+  }
+
+  async function logout(options: { redirect?: boolean } = {}) {
     void options;
+
+    if (currentUser.value) {
+      try {
+        await usersApi.revokeRefreshToken();
+      } catch {
+        // Keep local state consistent even if the session already expired.
+      }
+    }
+
     clearSession();
   }
 
   return {
-    accessToken,
-    refreshToken,
-    refreshTokenExpiresAtUtc,
     currentUser,
     isBootstrapped,
     isAuthenticated,
     isAdmin,
+    isImpersonating,
+    canStopImpersonation,
+    clearSession,
     bootstrap,
     register,
     login,
-    refreshSession,
     loadCurrentUser,
     forgotPassword,
     resetPassword,
@@ -150,6 +119,7 @@ export const useSessionStore = defineStore("session", () => {
     updateProfile,
     changePassword,
     revokeRefreshToken,
+    stopImpersonation,
     logout,
   };
 });

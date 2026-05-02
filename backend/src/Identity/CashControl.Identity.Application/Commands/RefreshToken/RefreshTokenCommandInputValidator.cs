@@ -6,7 +6,6 @@ public class RefreshTokenCommandInputValidator : AbstractValidator<RefreshTokenC
 {
     public RefreshTokenCommandInputValidator()
     {
-        RuleFor(x => x.AccessToken).NotEmpty();
-        RuleFor(x => x.RefreshToken).NotEmpty();
+        RuleFor(x => x.UserId).NotEmpty();
     }
 }

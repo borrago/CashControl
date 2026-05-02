@@ -10,8 +10,7 @@ public class RefreshTokenCommandHandler(IIdentityService identityService) : ICom
 
     public async Task<RefreshTokenCommandResult> Handle(RefreshTokenCommandInput request, CancellationToken cancellationToken)
     {
-        var refresh = await _identityService.RefreshTokenAsync(request.AccessToken, request.RefreshToken, cancellationToken);
-
-        return (RefreshTokenCommandResult)new RefreshTokenCommandResult(refresh.AccessToken, refresh.RefreshToken, refresh.RefreshTokenExpiresAtUtc).WithHttpStatusCode(HttpStatusCode.OK);
+        await _identityService.RefreshSessionAsync(request.UserId, cancellationToken);
+        return (RefreshTokenCommandResult)new RefreshTokenCommandResult().WithHttpStatusCode(HttpStatusCode.NoContent);
     }
 }

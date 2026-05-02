@@ -1,6 +1,8 @@
 using CashControl.Core.CrossCutting;
 using Elastic.Apm;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 using System.Net;
 
@@ -26,10 +28,26 @@ public class ExceptionMiddleware(RequestDelegate next)
             context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
             await context.Response.WriteAsJsonAsync(ApiErrorResponse.Validation(ex.Errors));
         }
+        catch (AntiforgeryValidationException ex)
+        {
+            if (useTelemetry)
+                Agent.Tracer.CurrentTransaction?.CaptureException(ex);
+
+            if (coreSettings.HostEnvironment?.IsDevelopment() == true || string.Equals(coreSettings.HostEnvironment?.EnvironmentName, "Test", StringComparison.OrdinalIgnoreCase))
+                Console.Error.WriteLine(ex);
+
+            context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+            await context.Response.WriteAsJsonAsync(ApiErrorResponse.Validation([
+                new CustomValidationFailure("Antiforgery", "Token CSRF ausente, expirado ou invalido.")
+            ]));
+        }
         catch (Exception ex)
         {
             if (useTelemetry)
                 Agent.Tracer.CurrentTransaction?.CaptureException(ex);
+
+            if (coreSettings.HostEnvironment?.IsDevelopment() == true || string.Equals(coreSettings.HostEnvironment?.EnvironmentName, "Test", StringComparison.OrdinalIgnoreCase))
+                Console.Error.WriteLine(ex);
 
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             await context.Response.WriteAsJsonAsync(ApiErrorResponse.InternalServerError("Ocorreu um erro interno."));

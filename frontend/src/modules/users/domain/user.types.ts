@@ -4,6 +4,11 @@ export interface UserProfile {
   userName?: string | null;
   fullName?: string | null;
   phoneNumber?: string | null;
+  tenant?: number;
+  canImpersonateUsers?: boolean;
+  isImpersonating?: boolean;
+  canStopImpersonation?: boolean;
+  impersonatedByEmail?: string | null;
   roles: string[];
 }
 

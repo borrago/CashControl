@@ -34,8 +34,8 @@ import BaseButton from "@/shared/ui/BaseButton.vue";
 const router = useRouter();
 const sessionStore = useSessionStore();
 
-function logout() {
-  sessionStore.logout();
+async function logout() {
+  await sessionStore.logout();
   void router.push({ name: "login" });
 }
 </script>

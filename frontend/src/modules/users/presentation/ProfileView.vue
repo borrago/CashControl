@@ -1,7 +1,22 @@
 <template>
   <div class="page-grid">
-    <BaseCard title="Sessão atual" subtitle="Consulta o endpoint de usuário autenticado e mantém a sessão sincronizada com o refresh token.">
+    <BaseCard title="Sessao atual" subtitle="Consulta o endpoint de usuario autenticado e mantem a sessao baseada no cookie do navegador.">
       <StatusBanner :message="statusMessage" :tone="statusTone" />
+
+      <div v-if="sessionStore.isImpersonating" class="impersonation-banner">
+        <p>
+          Esta sessao esta em modo de impersonacao.
+          <strong>Origem:</strong> {{ sessionStore.currentUser?.impersonatedByEmail || "sessao administrativa" }}
+        </p>
+        <BaseButton
+          v-if="sessionStore.canStopImpersonation"
+          variant="secondary"
+          :loading="isStoppingImpersonation"
+          @click="handleStopImpersonation"
+        >
+          Voltar para a sessao original
+        </BaseButton>
+      </div>
 
       <dl v-if="sessionStore.currentUser" class="details">
         <div>
@@ -19,6 +34,10 @@
         <div>
           <dt>Roles</dt>
           <dd>{{ sessionStore.currentUser.roles.join(", ") || "-" }}</dd>
+        </div>
+        <div>
+          <dt>Tenant</dt>
+          <dd>{{ sessionStore.currentUser.tenant || "-" }}</dd>
         </div>
       </dl>
     </BaseCard>
@@ -41,9 +60,9 @@
       </BaseCard>
     </div>
 
-    <BaseCard title="Controle de sessão" subtitle="Revoga o refresh token atual e força novo login.">
+    <BaseCard title="Controle de sessao" subtitle="Encerra a sessao atual e força novo login.">
       <BaseButton variant="danger" :loading="isRevokingToken" @click="handleRevokeRefreshToken">
-        Revogar refresh token
+        Encerrar sessao
       </BaseButton>
     </BaseCard>
   </div>
@@ -77,6 +96,7 @@ const statusTone = ref<"info" | "success" | "error">("info");
 const isUpdatingProfile = ref(false);
 const isChangingPassword = ref(false);
 const isRevokingToken = ref(false);
+const isStoppingImpersonation = ref(false);
 
 watch(
   () => sessionStore.currentUser,
@@ -130,9 +150,23 @@ async function handleRevokeRefreshToken() {
     await router.push({ name: "login" });
   } catch (error) {
     statusTone.value = "error";
-    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao revogar token.";
+    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao encerrar sessao.";
   } finally {
     isRevokingToken.value = false;
+  }
+}
+
+async function handleStopImpersonation() {
+  try {
+    isStoppingImpersonation.value = true;
+    await sessionStore.stopImpersonation();
+    statusTone.value = "success";
+    statusMessage.value = "Sessao original restaurada.";
+  } catch (error) {
+    statusTone.value = "error";
+    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao restaurar a sessao original.";
+  } finally {
+    isStoppingImpersonation.value = false;
   }
 }
 </script>
@@ -144,10 +178,22 @@ async function handleRevokeRefreshToken() {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
-.details div {
+.details div,
+.impersonation-banner {
   padding: 0.9rem;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.64);
+}
+
+.impersonation-banner {
+  display: grid;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(171, 92, 37, 0.2);
+}
+
+.impersonation-banner p {
+  margin: 0;
 }
 
 dt {
