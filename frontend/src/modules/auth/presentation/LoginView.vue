@@ -1,9 +1,7 @@
 <template>
   <BaseCard title="Entrar" subtitle="Usa login por cookie de sessão e leitura do usuário autenticado.">
     <form class="form" @submit.prevent="handleSubmit">
-      <StatusBanner :message="statusMessage" :tone="statusTone" />
-
-      <BaseInput v-model="form.email" label="E-mail" type="email" placeholder="voce@empresa.com" />
+      <BaseInput v-model="form.email" label="E-mail" type="email" placeholder="nome@empresa.com" />
       <BaseInput v-model="form.password" label="Senha" type="password" placeholder="Sua senha" />
 
       <div class="actions">
@@ -16,17 +14,16 @@
 
 <script setup lang="ts">
 import { reactive, ref } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
-import { ApiClientError } from "@/shared/api/api-error";
+import { RouterLink, useRouter } from "vue-router";
 import { useSessionStore } from "@/modules/auth/application/session.store";
 import BaseButton from "@/shared/ui/BaseButton.vue";
 import BaseCard from "@/shared/ui/BaseCard.vue";
 import BaseInput from "@/shared/ui/BaseInput.vue";
-import StatusBanner from "@/shared/ui/StatusBanner.vue";
+import { useToasts } from "@/shared/ui/toast.store";
 
 const router = useRouter();
-const route = useRoute();
 const sessionStore = useSessionStore();
+const { notifyError, notifySuccess, getErrorMessage } = useToasts();
 
 const form = reactive({
   email: "",
@@ -34,24 +31,18 @@ const form = reactive({
 });
 
 const isSubmitting = ref(false);
-const statusMessage = ref("");
-const statusTone = ref<"info" | "success" | "error">("info");
 
 async function handleSubmit() {
   try {
     isSubmitting.value = true;
-    statusMessage.value = "";
 
     await sessionStore.login(form);
 
-    statusTone.value = "success";
-    statusMessage.value = "Sessao iniciada com sucesso.";
+    notifySuccess("Sessão iniciada com sucesso.");
 
-    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/profile";
-    await router.push(redirect);
+    await router.push({ name: "home" });
   } catch (error) {
-    statusTone.value = "error";
-    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao entrar.";
+    notifyError(getErrorMessage(error, "Falha ao entrar."));
   } finally {
     isSubmitting.value = false;
   }

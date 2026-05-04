@@ -28,7 +28,7 @@ public static class DependencyInjection
                 options.Password.RequireUppercase = false;
                 options.Password.RequireLowercase = false;
                 options.Password.RequireNonAlphanumeric = false;
-                options.SignIn.RequireConfirmedEmail = true;
+                options.SignIn.RequireConfirmedEmail = securityOptions.RequireConfirmedEmail;
                 options.Lockout.AllowedForNewUsers = true;
                 options.Lockout.MaxFailedAccessAttempts = securityOptions.MaxFailedAccessAttempts;
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(securityOptions.DefaultLockoutMinutes);

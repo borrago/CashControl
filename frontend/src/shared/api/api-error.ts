@@ -32,7 +32,9 @@ export async function parseApiError(response: Response): Promise<ApiClientError>
 
   return new ApiClientError(
     response.status,
-    errorResponse?.message ?? `Falha na requisicao (${response.status}).`,
+    errorResponse?.errors?.find((detail) => detail.errorMessage)?.errorMessage
+      ?? errorResponse?.message
+      ?? `Falha na requisição (${response.status}).`,
     errorResponse,
   );
 }

@@ -8,12 +8,15 @@
         </div>
 
         <nav class="shell__nav">
-          <RouterLink to="/">Início</RouterLink>
           <RouterLink v-if="!sessionStore.isAuthenticated" to="/login">Login</RouterLink>
           <RouterLink v-if="!sessionStore.isAuthenticated" to="/register">Cadastro</RouterLink>
-          <RouterLink v-if="sessionStore.isAuthenticated" to="/profile">Perfil</RouterLink>
-          <RouterLink v-if="sessionStore.isAdmin" to="/admin/users">Admin</RouterLink>
-          <BaseButton v-if="sessionStore.isAuthenticated" variant="secondary" @click="logout">
+          <BaseButton
+            v-if="sessionStore.isAuthenticated"
+            class="shell__logout"
+            variant="danger"
+            :loading="isLoggingOut"
+            @click="logout"
+          >
             Sair
           </BaseButton>
         </nav>
@@ -27,16 +30,27 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { useSessionStore } from "@/modules/auth/application/session.store";
 import BaseButton from "@/shared/ui/BaseButton.vue";
+import { useToasts } from "@/shared/ui/toast.store";
 
 const router = useRouter();
 const sessionStore = useSessionStore();
+const { notifyError, getErrorMessage } = useToasts();
+const isLoggingOut = ref(false);
 
 async function logout() {
-  await sessionStore.logout();
-  void router.push({ name: "login" });
+  try {
+    isLoggingOut.value = true;
+    await sessionStore.logout();
+    await router.push({ name: "login" });
+  } catch (error) {
+    notifyError(getErrorMessage(error, "Falha ao encerrar a sessão."));
+  } finally {
+    isLoggingOut.value = false;
+  }
 }
 </script>
 
@@ -85,6 +99,10 @@ h1 {
 .shell__nav a.router-link-active {
   color: var(--primary);
   font-weight: 700;
+}
+
+.shell__logout {
+  padding-inline: 1rem;
 }
 
 .shell__main {

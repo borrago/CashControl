@@ -1,24 +1,24 @@
 <template>
   <div class="page-grid">
-    <BaseCard title="Operacao pronta para o backend atual" subtitle="O frontend cobre autenticacao por sessao, autosservico do usuario e administracao.">
+    <BaseCard title="Operação pronta para o backend atual" subtitle="O frontend cobre autenticação por sessão, autosserviço do usuário e administração.">
       <div class="three-columns">
         <article class="metric">
           <strong>Auth</strong>
-          <span>registro, login por cookie, confirmacao e reset</span>
+          <span>registro, login por cookie, confirmação e reset</span>
         </article>
         <article class="metric">
-          <strong>Usuario</strong>
-          <span>perfil, alteracao de senha e encerramento de sessao</span>
+          <strong>Usuário</strong>
+          <span>perfil, alteração de senha e encerramento de sessão</span>
         </article>
         <article class="metric">
           <strong>Admin</strong>
-          <span>busca, papeis e remocao de usuarios</span>
+          <span>busca, papéis e remoção de usuários</span>
         </article>
       </div>
     </BaseCard>
 
     <div class="two-columns">
-      <BaseCard title="Fluxo publico" subtitle="Entradas que nao exigem sessao.">
+      <BaseCard title="Fluxo público" subtitle="Entradas que não exigem sessão.">
         <ul class="links">
           <li><RouterLink to="/login">Entrar com credenciais</RouterLink></li>
           <li><RouterLink to="/register">Criar conta</RouterLink></li>
@@ -28,9 +28,9 @@
         </ul>
       </BaseCard>
 
-      <BaseCard title="Fluxo autenticado" subtitle="Recursos protegidos pela sessao do navegador.">
+      <BaseCard title="Fluxo autenticado" subtitle="Recursos protegidos pela sessão do navegador.">
         <ul class="links">
-          <li><RouterLink to="/profile">Abrir painel do usuario</RouterLink></li>
+          <li><RouterLink to="/profile">Abrir painel do usuário</RouterLink></li>
           <li><RouterLink to="/admin/users">Abrir console administrativo</RouterLink></li>
         </ul>
       </BaseCard>

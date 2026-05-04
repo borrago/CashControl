@@ -29,7 +29,7 @@ describe("session.store", () => {
     setActivePinia(createPinia());
   });
 
-  it("faz login via cookie e carrega o usuario atual", async () => {
+  it("faz login via cookie e carrega o usuário atual", async () => {
     vi.mocked(authApi.login).mockResolvedValue();
 
     vi.mocked(usersApi.getCurrentUser).mockResolvedValue({

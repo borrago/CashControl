@@ -9,7 +9,7 @@ describe("httpClient", () => {
     });
   });
 
-  it("envia credenciais e limpa a sessao quando recebe 401 em rota autenticada", async () => {
+  it("envia credenciais e limpa a sessão quando recebe 401 em rota autenticada", async () => {
     const clearSession = vi.fn();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

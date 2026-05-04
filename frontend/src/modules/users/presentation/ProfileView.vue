@@ -1,12 +1,10 @@
 <template>
   <div class="page-grid">
-    <BaseCard title="Sessao atual" subtitle="Consulta o endpoint de usuario autenticado e mantem a sessao baseada no cookie do navegador.">
-      <StatusBanner :message="statusMessage" :tone="statusTone" />
-
+    <BaseCard title="Sessão atual" subtitle="Consulta o endpoint de usuário autenticado e mantém a sessão baseada no cookie do navegador.">
       <div v-if="sessionStore.isImpersonating" class="impersonation-banner">
         <p>
-          Esta sessao esta em modo de impersonacao.
-          <strong>Origem:</strong> {{ sessionStore.currentUser?.impersonatedByEmail || "sessao administrativa" }}
+          Esta sessão está em modo de impersonação.
+          <strong>Origem:</strong> {{ sessionStore.currentUser?.impersonatedByEmail || "sessão administrativa" }}
         </p>
         <BaseButton
           v-if="sessionStore.canStopImpersonation"
@@ -14,7 +12,7 @@
           :loading="isStoppingImpersonation"
           @click="handleStopImpersonation"
         >
-          Voltar para a sessao original
+          Voltar para a sessão original
         </BaseButton>
       </div>
 
@@ -60,9 +58,9 @@
       </BaseCard>
     </div>
 
-    <BaseCard title="Controle de sessao" subtitle="Encerra a sessao atual e força novo login.">
+    <BaseCard title="Controle de sessão" subtitle="Encerra a sessão atual e força novo login.">
       <BaseButton variant="danger" :loading="isRevokingToken" @click="handleRevokeRefreshToken">
-        Encerrar sessao
+        Encerrar sessão
       </BaseButton>
     </BaseCard>
   </div>
@@ -71,15 +69,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { ApiClientError } from "@/shared/api/api-error";
 import { useSessionStore } from "@/modules/auth/application/session.store";
 import BaseButton from "@/shared/ui/BaseButton.vue";
 import BaseCard from "@/shared/ui/BaseCard.vue";
 import BaseInput from "@/shared/ui/BaseInput.vue";
-import StatusBanner from "@/shared/ui/StatusBanner.vue";
+import { useToasts } from "@/shared/ui/toast.store";
 
 const router = useRouter();
 const sessionStore = useSessionStore();
+const { notifyError, notifySuccess, getErrorMessage } = useToasts();
 
 const profileForm = reactive({
   fullName: "",
@@ -91,8 +89,6 @@ const passwordForm = reactive({
   newPassword: "",
 });
 
-const statusMessage = ref("");
-const statusTone = ref<"info" | "success" | "error">("info");
 const isUpdatingProfile = ref(false);
 const isChangingPassword = ref(false);
 const isRevokingToken = ref(false);
@@ -117,11 +113,9 @@ async function handleUpdateProfile() {
   try {
     isUpdatingProfile.value = true;
     await sessionStore.updateProfile(profileForm);
-    statusTone.value = "success";
-    statusMessage.value = "Perfil atualizado com sucesso.";
+    notifySuccess("Perfil atualizado com sucesso.");
   } catch (error) {
-    statusTone.value = "error";
-    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao atualizar perfil.";
+    notifyError(getErrorMessage(error, "Falha ao atualizar perfil."));
   } finally {
     isUpdatingProfile.value = false;
   }
@@ -133,11 +127,9 @@ async function handleChangePassword() {
     await sessionStore.changePassword(passwordForm);
     passwordForm.currentPassword = "";
     passwordForm.newPassword = "";
-    statusTone.value = "success";
-    statusMessage.value = "Senha alterada.";
+    notifySuccess("Senha alterada.");
   } catch (error) {
-    statusTone.value = "error";
-    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao alterar senha.";
+    notifyError(getErrorMessage(error, "Falha ao alterar senha."));
   } finally {
     isChangingPassword.value = false;
   }
@@ -149,8 +141,7 @@ async function handleRevokeRefreshToken() {
     await sessionStore.revokeRefreshToken();
     await router.push({ name: "login" });
   } catch (error) {
-    statusTone.value = "error";
-    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao encerrar sessao.";
+    notifyError(getErrorMessage(error, "Falha ao encerrar sessão."));
   } finally {
     isRevokingToken.value = false;
   }
@@ -160,11 +151,9 @@ async function handleStopImpersonation() {
   try {
     isStoppingImpersonation.value = true;
     await sessionStore.stopImpersonation();
-    statusTone.value = "success";
-    statusMessage.value = "Sessao original restaurada.";
+    notifySuccess("Sessão original restaurada.");
   } catch (error) {
-    statusTone.value = "error";
-    statusMessage.value = error instanceof ApiClientError ? error.message : "Falha ao restaurar a sessao original.";
+    notifyError(getErrorMessage(error, "Falha ao restaurar a sessão original."));
   } finally {
     isStoppingImpersonation.value = false;
   }

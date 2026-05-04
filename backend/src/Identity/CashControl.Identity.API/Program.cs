@@ -18,6 +18,7 @@ var coreSettings = new CoreSettings
     TypeStartUp = typeof(Program),
     ConfigureUseDeveloperExceptionPageWhenInDevelopmentEnvironment = true,
     ConfigureRateLimiter = true,
+    IsMultiTenancyEnabled = false,
 };
 
 builder.Services.AddInfrastructure(coreSettings);

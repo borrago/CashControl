@@ -56,12 +56,15 @@ public class IdentityService(
         var user = await _userManager.FindByEmailAsync(normalizedEmail)
             ?? throw new CoreApplicationException("Usuario nao encontrado.");
 
-        if (!user.EmailConfirmed)
-            throw new CoreApplicationException("E-mail nao confirmado.");
-
         var signInResult = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
         if (signInResult.IsLockedOut)
             throw new CoreApplicationException("Usuario temporariamente bloqueado por excesso de tentativas. Tente novamente mais tarde.");
+
+        if (signInResult.IsNotAllowed && !user.EmailConfirmed)
+            throw new CoreApplicationException("E-mail nao confirmado.");
+
+        if (signInResult.IsNotAllowed)
+            throw new CoreApplicationException("Login nao permitido para este usuario.");
 
         if (!signInResult.Succeeded)
             throw new CoreApplicationException("Usuario ou senha invalidos.");

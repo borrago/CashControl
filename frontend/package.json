@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:https": "set VITE_DEV_HTTPS=true&& vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",

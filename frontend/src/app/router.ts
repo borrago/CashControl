@@ -42,7 +42,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && sessionStore.isAuthenticated) {
-    return { name: "profile" };
+    return { name: "home" };
   }
 
   if (to.meta.requiresAdmin && !sessionStore.isAdmin) {

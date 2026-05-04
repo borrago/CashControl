@@ -1,0 +1,26 @@
+{
+  "name": "CashControl",
+  "short_name": "CashControl",
+  "description": "CashControl Identity Console",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f1e8",
+  "theme_color": "#0f766e",
+  "orientation": "portrait-primary",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import App from "@/app/App.vue";
 import { router } from "@/app/router";
 import { useSessionStore } from "@/modules/auth/application/session.store";
 import { configureHttpClient } from "@/shared/api/http-client";
+import { registerServiceWorker } from "@/shared/pwa/register-service-worker";
 import "@/shared/styles/main.css";
 
 async function bootstrap() {
@@ -17,12 +18,9 @@ async function bootstrap() {
     clearSession: () => sessionStore.clearSession(),
   });
 
-  await sessionStore.bootstrap();
-
   app.use(router);
-  await router.isReady();
-
   app.mount("#app");
+  registerServiceWorker();
 }
 
 void bootstrap();
